@@ -472,7 +472,7 @@ if __name__ == '__main__':
         imu.update()
         imu.add_to_csv()
         t, raw, accel, vel, pos, rpy = imu.get_data()
-        print(imu.get_data())
+        # print(imu.get_data())
         # print(f"Raw:{(round(raw[1:][0],2), round(raw[1:][1],2))}|Accel:{(round(accel[1:][0],2),}|Vel:{vel}|Pos:{pos}|Rpy:{rpy}")
 
         pass
