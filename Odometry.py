@@ -202,7 +202,7 @@ class Odometry(object):
         ###Angular Velocity Vector / Gyroscope (100Hz) - Three axis of 'rotation speed' in rad/s###
         self.__gyro = self.__sensor.gyro
 
-        self.__acceleration = self.__linear_acceleration
+        self.__acceleration = self.__sensor.linear_acceleration
 
         #correct for offsets
         self.__magnetometer = (self.__magnetometer[0] - self.__mag_offset[0], 
@@ -219,6 +219,7 @@ class Odometry(object):
         dt = 1
         
         #When the robot is still, the accel values are near 0. In this case, set accel values to zero.
+        
         self.__acceleration = (self.__acceleration[0] - self.__accelerometer_offset[0],
                                self.__acceleration[1] - self.__accelerometer_offset[1],
                                self.__acceleration[2] - self.__accelerometer_offset[2])
