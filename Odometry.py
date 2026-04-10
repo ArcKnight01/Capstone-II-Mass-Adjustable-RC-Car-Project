@@ -218,7 +218,7 @@ class Odometry(object):
         self.__tickTimer.reset()
         dt = 1
         
-        print(f"accels: {self.__acceleration[0]}")
+        # print(f"accels: {self.__acceleration[0]}")
         #When the robot is still, the accel values are near 0. In this case, set accel values to zero.
         
         # self.__acceleration = (self.__acceleration[0] - self.__accelerometer_offset[0],
