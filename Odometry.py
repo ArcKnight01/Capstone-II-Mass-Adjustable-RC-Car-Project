@@ -221,25 +221,25 @@ class Odometry(object):
         print(f"accels: {self.__acceleration[0]}")
         #When the robot is still, the accel values are near 0. In this case, set accel values to zero.
         
-        self.__acceleration = (self.__acceleration[0] - self.__accelerometer_offset[0],
-                               self.__acceleration[1] - self.__accelerometer_offset[1],
-                               self.__acceleration[2] - self.__accelerometer_offset[2])
+        # self.__acceleration = (self.__acceleration[0] - self.__accelerometer_offset[0],
+        #                        self.__acceleration[1] - self.__accelerometer_offset[1],
+        #                        self.__acceleration[2] - self.__accelerometer_offset[2])
         
-        self.__delta_acceleration = (self.__acceleration[0] - self.__previous_acceleration[0],
-                                     self.__acceleration[1] - self.__previous_acceleration[1],
-                                     self.__acceleration[2] - self.__previous_acceleration[2])
+        # self.__delta_acceleration = (self.__acceleration[0] - self.__previous_acceleration[0],
+        #                              self.__acceleration[1] - self.__previous_acceleration[1],
+        #                              self.__acceleration[2] - self.__previous_acceleration[2])
 
-        self.__velocity = (self.__velocity[0] + self.__delta_acceleration[0]*dt, 
-                           self.__velocity[1] + self.__delta_acceleration[1]*dt, 
-                           self.__velocity[2] + self.__delta_acceleration[2]*dt)
+        # self.__velocity = (self.__velocity[0] + self.__delta_acceleration[0]*dt, 
+        #                    self.__velocity[1] + self.__delta_acceleration[1]*dt, 
+        #                    self.__velocity[2] + self.__delta_acceleration[2]*dt)
         
-        self.__delta_velocity = (self.__velocity[0] - self.__previous_velocity[0],
-                                 self.__velocity[1] - self.__previous_velocity[1],
-                                 self.__velocity[2] - self.__previous_velocity[2])
-        #update position
-        self.__position = (self.__position[0] + self.__delta_velocity[0]*dt,
-                           self.__position[1] + self.__delta_velocity[1]*dt,
-                           self.__position[2] + self.__delta_velocity[2]*dt)
+        # self.__delta_velocity = (self.__velocity[0] - self.__previous_velocity[0],
+        #                          self.__velocity[1] - self.__previous_velocity[1],
+        #                          self.__velocity[2] - self.__previous_velocity[2])
+        # #update position
+        # self.__position = (self.__position[0] + self.__delta_velocity[0]*dt,
+        #                    self.__position[1] + self.__delta_velocity[1]*dt,
+        #                    self.__position[2] + self.__delta_velocity[2]*dt)
         
         #get roll,pitch,yaw with acceleration-magnetic data
         self.__roll_am = roll_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2]) - self.__orientation_zeroed[0]
