@@ -1,7 +1,7 @@
 import sys
 import os
 import time
-import strenum
+
 import numpy as np
 
 from IMUUtil import *

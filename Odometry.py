@@ -19,6 +19,7 @@ if robotSupported:
 from IMUUtil import *
 from RobotClock import Clock
 from IMU import *
+
 class Odometry(object):
     """ Calculates position, velocity and angular velocity from acceleration and orientation"""
     def __init__(self,
