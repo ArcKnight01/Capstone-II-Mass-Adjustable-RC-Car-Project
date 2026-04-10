@@ -56,7 +56,7 @@ def yaw_gy(prev_angle, delT, gyro):
     yaw = prev_angle + gyro*delT
     return np.mod(yaw,360)
 
-# SENSOR FUSION
+# SENSOR FUSION (complementary filter (gyro + accelmag))
 def roll_F(prev_angle, delT, gyro,accelX,accelY,accelZ,weight):
     """
     Param: prev_angle, delT, gyro,accelX,accelY,accelZ,weight

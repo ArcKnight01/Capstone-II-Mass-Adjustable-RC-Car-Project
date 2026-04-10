@@ -152,28 +152,36 @@ class IMU(object):
         
         # set the mode:
         self.__sensor.mode = mode
-        self.__calibrated : bool = False
-        self.__last_val = 0xFFFF
 
+        self.__last_val = 0xFFFF
+        self.__zeroed_orientation_offset = (0,0,0)
+        self.calibrated : bool = False
+        print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
 
     def get_temperature(self):
         # global last_val  # noqa: PLW0603
         result = self.__sensor.temperature
-        if abs(result - last_val) == 128:
+        if abs(result - self.__last_val) == 128:
             result = self.__sensor.temperature
-            if abs(result - last_val) == 128:
+            if abs(result - self.__last_val) == 128:
                 return 0b00111111 & result
-        last_val = result
+        self.__last_val = result
         return result
     
+    def set_zeroed_orientation(self):
+        self.__zeroed_orientation_offset = self.__sensor.euler
+    
+    def get_zeroed_orientation(self):
+        return self.__zeroed_orientation_offset 
+
     def calibrate(self):
         self.calibrate_magnetometer()
         time.sleep(1)
         self.calibrate_accelerometer()
         time.sleep(1)
         self.calibrate_gyro()
-        
-        self.__calibrated = self.__sensor.calibrated
+        self.calibrated = self.__sensor.calibrated
+        self.set_zeroed_orientation()
         print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}")
     
     def calibrate_magnetometer(self):
@@ -248,9 +256,6 @@ class IMU(object):
     
     def get_raw_magnetometer(self):
         return self.__sensor.magnetic
-    
-
-    
 
 if __name__ == "__main__":
     pass
