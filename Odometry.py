@@ -121,6 +121,7 @@ class Odometry(object):
         self.__gyro_offset = self.calibrate_gyro()
         
         self.__previous_orientation = self.__orientation = self.__initial_orientation = self.set_initial(self.__mag_offset)
+        self.__orientation_zeroed = self.__orientation
         
         #initialize the csv-data file
         self.init_csv()
@@ -143,6 +144,7 @@ class Odometry(object):
                 return 0b00111111 & result
         self.__last_val = result
         return result
+    
     def calibrate(self):
         #calibrate accelerometer and get offset values
         self.__accelerometer_offset = self.calibrate_accelerometer()
@@ -303,6 +305,7 @@ class Odometry(object):
 
         print(f"[CALIBRATION] Acceleration offsets: {accel_offsets}.")
         return accel_offsets
+    
     def zero_orientation(self):
         self.__orientation_zeroed = self.__orientation
         self.__roll, self.__pitch, self.__yaw = self.__orientation
