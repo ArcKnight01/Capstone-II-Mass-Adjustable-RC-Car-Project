@@ -155,7 +155,7 @@ class IMU(object):
 
         self.__last_val = 0xFFFF
         self.__zeroed_orientation_offset = (0,0,0)
-        self.calibrated : bool = False
+        self.__calibrated : bool = False
         print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
 
     def get_temperature(self):

@@ -97,10 +97,11 @@ class Controller(object):
         odometry_data : dict[str, int] = self.odometry.get_data()
         row = [self.__time, receiver_data_dict['angle'], odometry_data['acceleration'][0], odometry_data['acceleration'][1],odometry_data['acceleration'][2],odometry_data['absolute_orientation'][0],odometry_data['absolute_orientation'][1],odometry_data['absolute_orientation'][2],odometry_data['angular_velocity'][0],odometry_data['angular_velocity'][1],odometry_data['angular_velocity'][2],"",""]
         # log data
-        self.add_to_csv(self.csv_data_filename)
+        self.add_to_csv(self.csv_data_filename, row)
 
         self.__tickTimer.update()
         self.__delT = self.__tickTimer.get_time("run")
+        # reset the timer
         self.__tickTimer.reset()
         time.sleep(1.000)
         
