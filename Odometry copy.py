@@ -111,6 +111,7 @@ class OdometryOLD(object):
         
         self.__tickTimer.update()
         self.__delT = self.__tickTimer.get_time("run")
+        
         self.__previous_acceleration = self.__acceleration
         self.__previous_velocity = self.__velocity
         self.__previous_position = self.__position
