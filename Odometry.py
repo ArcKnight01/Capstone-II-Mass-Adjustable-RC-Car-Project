@@ -14,7 +14,7 @@ import time
 # from IMU_Util import *
 import csv
 from RobotClock import Clock
-
+import numpy as np 
 # How often to update the BNO sensor data (in hertz).
 BNO_UPDATE_FREQUENCY_HZ = 10
 
