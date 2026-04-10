@@ -39,13 +39,13 @@ class RCReceiver(object):
     This class reads RC Receiver steering angle output from the Raspberry Pi in NMEA convention.
     """
     def __init__(self,
-                 baud_rate : int = 115200,
+                 baudrate : int = 115200,
                  port : str = '/dev/ttyUSB0', 
                  verbose : bool = False
                  ):
         
-        
-        self.__serial = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+        self.__verbose = verbose
+        self.__serial = serial.Serial(port, baudrate, timeout=1)
 
     def get_data(self) -> dict[str, int] | None:
         line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
