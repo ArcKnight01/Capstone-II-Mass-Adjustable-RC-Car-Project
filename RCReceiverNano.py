@@ -40,7 +40,7 @@ class RCReceiver(object):
     """
     def __init__(self,
                  baud_rate : int = 115200,
-                 port : str = '/dev/ttyACM0', 
+                 port : str = '/dev/ttyUSB0', 
                  verbose : bool = False
                  ):
         
