@@ -11,7 +11,7 @@ if robotSupported:
     import adafruit_bno055
 
 import time
-from OdometryUtil import *
+from IMUUtil import *
 import csv
 from RobotClock import Clock
 import numpy as np 
