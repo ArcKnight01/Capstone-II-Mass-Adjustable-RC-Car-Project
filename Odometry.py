@@ -121,8 +121,8 @@ class Odometry(object):
         self.__gyro_offset = self.calibrate_gyro()
         
         self.__previous_orientation = self.__orientation = self.__initial_orientation = self.set_initial(self.__mag_offset)
-        self.__orientation_zeroed = self.__orientation
-        
+        self.__orientation_zeroed = self.zero_orientation()
+
         #initialize the csv-data file
         self.init_csv()
         self.__tickTimer = Clock()
