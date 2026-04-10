@@ -242,37 +242,37 @@ class Odometry(object):
         #                    self.__position[2] + self.__delta_velocity[2]*dt)
         
         #get roll,pitch,yaw with acceleration-magnetic data
-        self.__roll_am = roll_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2]) - self.__orientation_zeroed[0]
-        self.__pitch_am = pitch_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2]) - self.__orientation_zeroed[1]
-        self.__yaw_am = yaw_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2], self.__magnetometer[0], self.__magnetometer[1], self.__magnetometer[2]) - self.__orientation_zeroed[2]
+        # self.__roll_am = roll_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2]) - self.__orientation_zeroed[0]
+        # self.__pitch_am = pitch_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2]) - self.__orientation_zeroed[1]
+        # self.__yaw_am = yaw_am(self.__acceleration[0], self.__acceleration[1], self.__acceleration[2], self.__magnetometer[0], self.__magnetometer[1], self.__magnetometer[2]) - self.__orientation_zeroed[2]
     
-        #get roll,pitch,yaw with respect to gyro data
-        self.__roll_gy = roll_gy(self.__previous_orientation[0], dt, self.__gyro[0]) - self.__orientation_zeroed[0]
-        self.__pitch_gy = pitch_gy(self.__previous_orientation[1], dt, self.__gyro[1]) - self.__orientation_zeroed[1]
-        self.__yaw_gy = yaw_gy(self.__previous_orientation[2], dt, self.__gyro[2]) - self.__orientation_zeroed[2]
+        # #get roll,pitch,yaw with respect to gyro data
+        # self.__roll_gy = roll_gy(self.__previous_orientation[0], dt, self.__gyro[0]) - self.__orientation_zeroed[0]
+        # self.__pitch_gy = pitch_gy(self.__previous_orientation[1], dt, self.__gyro[1]) - self.__orientation_zeroed[1]
+        # self.__yaw_gy = yaw_gy(self.__previous_orientation[2], dt, self.__gyro[2]) - self.__orientation_zeroed[2]
 
-        #get roll,pitch,yaw using fusion of am and gyro
-        self.__roll = roll_F(self.__previous_orientation[0], dt, self.__gyro[0], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], 0.5) - self.__orientation_zeroed[0]
-        self.__pitch = pitch_F(self.__previous_orientation[1], dt, self.__gyro[1], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], 0.5) - self.__orientation_zeroed[1]
-        self.__yaw = yaw_F(self.__previous_orientation[0], dt, self.__gyro[0], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], self.__magnetometer[0], self.__magnetometer[1], self.__magnetometer[2],0.5) - self.__orientation_zeroed[2]
+        # #get roll,pitch,yaw using fusion of am and gyro
+        # self.__roll = roll_F(self.__previous_orientation[0], dt, self.__gyro[0], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], 0.5) - self.__orientation_zeroed[0]
+        # self.__pitch = pitch_F(self.__previous_orientation[1], dt, self.__gyro[1], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], 0.5) - self.__orientation_zeroed[1]
+        # self.__yaw = yaw_F(self.__previous_orientation[0], dt, self.__gyro[0], self.__acceleration[0],self.__acceleration[1], self.__acceleration[2], self.__magnetometer[0], self.__magnetometer[1], self.__magnetometer[2],0.5) - self.__orientation_zeroed[2]
 
         #set the orientation based on roll pitch and yaw values
-        self.__orientation = (self.__roll, self.__pitch, self.__yaw)
+        # self.__orientation = (self.__roll, self.__pitch, self.__yaw)
         
         
         if(self.__verbose):
             print(f"[INFO] Raw Acceleration {self.__raw_acceleration}")
             print(f"[INFO] Linear Acceleration {self.__linear_acceleration}")
-            print(f"[INFO] Acceleration {self.__acceleration}")
-            print(f"[INFO] Velocity {self.__velocity}")
-            print(f"[INFO] Position {self.__position}")
+            # print(f"[INFO] Acceleration {self.__acceleration}")
+            # print(f"[INFO] Velocity {self.__velocity}")
+            # print(f"[INFO] Position {self.__position}")
             print(f"[INFO] Magnetometer {self.__magnetometer}")
             print(f"[INFO] Gyroscope {self.__gyro}")
-            # print(f"[INFO] Euler orientation {self.__euler}")
+            print(f"[INFO] Euler orientation {self.__euler}")
             # print(f"[INFO] Quaternion {self.__quaternion}")
             print(f"[INFO] Gravity {self.__gravity}")
-            print(f"[INFO] RPY_GY {(round(self.__roll_gy,2), round(self.__pitch_gy,2), round(self.__yaw_gy,2))} (degrees)")
-            print(f"[INFO] RPY_AM {(round(self.__roll_am,2), round(self.__pitch_am,2), round(self.__yaw_am,2))} (degrees)")
+            # print(f"[INFO] RPY_GY {(round(self.__roll_gy,2), round(self.__pitch_gy,2), round(self.__yaw_gy,2))} (degrees)")
+            # print(f"[INFO] RPY_AM {(round(self.__roll_am,2), round(self.__pitch_am,2), round(self.__yaw_am,2))} (degrees)")
             print(f"[INFO] RPY_F {self.__orientation}")
 
     def calibrate_accelerometer(self):
