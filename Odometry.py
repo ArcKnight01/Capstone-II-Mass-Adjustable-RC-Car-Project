@@ -107,11 +107,10 @@ class Odometry(object):
 
         self.__absolute_orientation = self.__imu.get_euler_angles()
         
-        self.__relative_orientation = self.__absolute_orientation - self.__imu.get_zeroed_orientation()
-        
-        self.__velocity = self.__previous_velocity + 0.5 * (self.__acceleration + self.__previous_acceleration) * dt
-        self.__position = self.__previous_position + 0.5 * (self.__velocity + self.__previous_velocity) * dt
-        
+        self.__relative_orientation = tuple(np.array(self.__absolute_orientation) - np.array(self.__imu.get_zeroed_orientation()))
+        self.__velocity = tuple(np.array(self.__previous_velocity) + 0.5 * (np.array(self.__acceleration) + np.array(self.__previous_acceleration)) * dt)
+
+        self.__position = tuple(np.array(self.__previous_position) + 0.5 * (np.array(self.__velocity) + np.array(self.__previous_velocity)) * dt)
         self.__previous_position = self.__position
         self.__previous_velocity = self.__velocity
         self.__previous_acceleration = self.__acceleration

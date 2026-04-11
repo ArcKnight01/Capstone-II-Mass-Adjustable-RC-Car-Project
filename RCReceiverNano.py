@@ -52,7 +52,7 @@ class RCReceiver(object):
         if line.startswith('$STEER'):
             result = parse_steer(line)
             if result:
-                print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
+                # print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
                 return result
         return None
     

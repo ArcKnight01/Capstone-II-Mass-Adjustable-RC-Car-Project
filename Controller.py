@@ -68,7 +68,7 @@ class Controller(object):
         self.__time = self.__clock.get_time("current")
 
         # read from rc receiver
-        receiver_data_dict : dict[str, int] = self.receiver.get_data()
+        receiver_data_dict : dict[str, int] = self.receiver.get_data()  or { 'pulse_width': 0, 'angle': 0 }
 
         # return {
         # 'pulse_width': int(fields[1]),
@@ -99,6 +99,21 @@ class Controller(object):
         # log data
         self.add_to_csv(self.csv_data_filename, row)
 
+        # print data
+        print(
+            f"t={self.__time:.3f} | "
+            f"steer={receiver_data_dict['angle']} deg | "
+            f"a=({odometry_data['acceleration'][0]:.3f}, "
+            f"{odometry_data['acceleration'][1]:.3f}, "
+            f"{odometry_data['acceleration'][2]:.3f}) m/s^2 | "
+            f"rpy=({odometry_data['absolute_orientation'][0]:.3f}, "
+            f"{odometry_data['absolute_orientation'][1]:.3f}, "
+            f"{odometry_data['absolute_orientation'][2]:.3f}) deg | "
+            f"w=({odometry_data['angular_velocity'][0]:.3f}, "
+            f"{odometry_data['angular_velocity'][1]:.3f}, "
+            f"{odometry_data['angular_velocity'][2]:.3f}) rad/s"
+        )
+        
         self.__tickTimer.update()
         self.__delT = self.__tickTimer.get_time("run")
         # reset the timer
