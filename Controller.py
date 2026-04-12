@@ -1,10 +1,11 @@
 import sys
 import os
 try:
-    robotSupported = os.uname().nodename == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = os.uname().nodename == ('terminatorpi' or 'robotpi' or 'carpi')
 except:
     import platform
-    robotSupported = platform.uname().node == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
+
 if robotSupported:
     import board
     import busio
@@ -59,10 +60,14 @@ class Controller(object):
     def calibrate():
         # TODO this is a stub, should we keep the calibration in the init function of this class?
         pass
-    
+
     def run(self):
-        while True: 
-            self.update()
+        try: 
+            while True: 
+                self.update()
+        except KeyboardInterrupt:
+            print("controller stopped due to keyboard input.")
+
 
     def update(self):
         # update the battery

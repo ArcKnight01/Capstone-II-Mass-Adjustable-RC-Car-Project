@@ -121,10 +121,21 @@ class Odometry(object):
 
 
 if __name__ == "__main__":
+    
+    if not robotSupported:
+        print("odometry test loop can only run on supported robot hardware.")
+        sys.exit(1)
+    
+
     odometry = Odometry() 
-    while True: 
-        dt = 1
-        odometry.update(dt=dt)
-        data = odometry.get_data()
-       
-        time.sleep(dt)
+    try: 
+        while True: 
+            dt = 1
+            odometry.update(dt=dt)
+            data = odometry.get_data()
+        
+            time.sleep(dt)
+
+    except KeyboardInterrupt:
+        print("\nStopped odometry test loop.")
+
