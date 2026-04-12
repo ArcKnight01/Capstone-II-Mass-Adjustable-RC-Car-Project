@@ -21,7 +21,55 @@ from RCReceiverNano import RCReceiver
 from RobotClock import Clock
 from Power import Battery
 
+# How often to update the BNO sensor data (in hertz).
+BNO_UPDATE_FREQUENCY_HZ = 10
+
 class Controller(object):
+    CSV_HEADERS = [
+        'time',
+        'runtime',
+        'loop_dt',
+        'receiver_pulse_width',
+        'receiver_angle',
+        'battery_percent',
+        'battery_seconds_left',
+        'battery_time_remaining',
+        'battery_plugged_in',
+        'imu_temperature',
+        'imu_raw_acceleration_x',
+        'imu_raw_acceleration_y',
+        'imu_raw_acceleration_z',
+        'imu_acceleration_x',
+        'imu_acceleration_y',
+        'imu_acceleration_z',
+        'imu_velocity_x',
+        'imu_velocity_y',
+        'imu_velocity_z',
+        'imu_position_x',
+        'imu_position_y',
+        'imu_position_z',
+        'imu_gravity_x',
+        'imu_gravity_y',
+        'imu_gravity_z',
+        'imu_absolute_roll',
+        'imu_absolute_pitch',
+        'imu_absolute_yaw',
+        'imu_relative_roll',
+        'imu_relative_pitch',
+        'imu_relative_yaw',
+        'imu_initial_roll',
+        'imu_initial_pitch',
+        'imu_initial_yaw',
+        'imu_angular_velocity_x',
+        'imu_angular_velocity_y',
+        'imu_angular_velocity_z',
+        'imu_magnetic_x',
+        'imu_magnetic_y',
+        'imu_magnetic_z',
+        'lat',
+        'lon',
+    ]
+
     def __init__(self,
                  verbose:bool=True, 
                  enabled:bool=True, 
@@ -30,7 +78,7 @@ class Controller(object):
                  csv_data_filename : str = 'data',
                  receiver : RCReceiver | None = None,
                  odometry : Odometry | None = None,
-                 loop_delay : float = 1.000,
+                 loop_delay : float = 1.000/BNO_UPDATE_FREQUENCY_HZ,
                  ):
         
         log_dir = './'
@@ -120,7 +168,7 @@ class Controller(object):
         self.__time = self.__clock.get_time("current")
 
         # read from rc receiver
-        receiver_data_dict : dict[str, int] = self.receiver.get_data()  or { 'pulse_width': 0, 'angle': 0 }
+        receiver_data_dict: dict[str, int] = self.receiver.get_data() or {'pulse_width': 0, 'angle': 0}
 
         # return {
         # 'pulse_width': int(fields[1]),
@@ -146,8 +194,10 @@ class Controller(object):
         # }
 
         # read odometry data 
-        odometry_data : dict[str, int] = self.odometry.get_data()
-        row = [self.__time, receiver_data_dict['angle'], odometry_data['acceleration'][0], odometry_data['acceleration'][1],odometry_data['acceleration'][2],odometry_data['absolute_orientation'][0],odometry_data['absolute_orientation'][1],odometry_data['absolute_orientation'][2],odometry_data['angular_velocity'][0],odometry_data['angular_velocity'][1],odometry_data['angular_velocity'][2],"",""]
+        odometry_data: dict[str, object] = self.odometry.get_data()
+        row = self.build_log_row(receiver_data_dict, odometry_data)
+        battery_percent = self.safe_battery_value(self.__battery.retrieve_percentage())
+        battery_display = f"{battery_percent}%" if battery_percent != '' else 'n/a'
         
         # log data
         self.add_to_csv(self.csv_data_filename, row)
@@ -155,7 +205,9 @@ class Controller(object):
         # print data
         print(
             f"t={self.__time:.3f} | "
+            f"pulse={receiver_data_dict['pulse_width']} us | "
             f"steer={receiver_data_dict['angle']} deg | "
+            f"battery={battery_display} | "
             f"a=({odometry_data['acceleration'][0]:.3f}, "
             f"{odometry_data['acceleration'][1]:.3f}, "
             f"{odometry_data['acceleration'][2]:.3f}) m/s^2 | "
@@ -169,14 +221,87 @@ class Controller(object):
         
         time.sleep(self.__loop_delay)
         
+    def build_log_row(self, receiver_data_dict: dict[str, int], odometry_data: dict[str, object]) -> list[object]:
+        battery_percent = self.safe_battery_value(self.__battery.retrieve_percentage())
+        battery_seconds_left = self.safe_battery_value(self.__battery.retrieve_seconds_left())
+        battery_time_remaining = self.safe_battery_value(self.__battery.get_time_remaining())
+        battery_plugged_in = self.safe_battery_value(self.__battery.get_plugged_in())
+
+        raw_acceleration = self.ensure_vector(odometry_data.get('raw_acceleration'))
+        acceleration = self.ensure_vector(odometry_data.get('acceleration'))
+        velocity = self.ensure_vector(odometry_data.get('velocity'))
+        position = self.ensure_vector(odometry_data.get('position'))
+        gravity = self.ensure_vector(odometry_data.get('gravity'))
+        absolute_orientation = self.ensure_vector(odometry_data.get('absolute_orientation'))
+        relative_orientation = self.ensure_vector(odometry_data.get('relative_orientation'))
+        initial_orientation = self.ensure_vector(odometry_data.get('initial_orientation'))
+        angular_velocity = self.ensure_vector(odometry_data.get('angular_velocity'))
+        magnetic = self.ensure_vector(odometry_data.get('magnetic'))
+
+        return [
+            self.__time,
+            self.__runtime,
+            self.__delT,
+            receiver_data_dict.get('pulse_width', 0),
+            receiver_data_dict.get('angle', 0),
+            battery_percent,
+            battery_seconds_left,
+            battery_time_remaining,
+            battery_plugged_in,
+            self.safe_battery_value(odometry_data.get('temperature')),
+            raw_acceleration[0],
+            raw_acceleration[1],
+            raw_acceleration[2],
+            acceleration[0],
+            acceleration[1],
+            acceleration[2],
+            velocity[0],
+            velocity[1],
+            velocity[2],
+            position[0],
+            position[1],
+            position[2],
+            gravity[0],
+            gravity[1],
+            gravity[2],
+            absolute_orientation[0],
+            absolute_orientation[1],
+            absolute_orientation[2],
+            relative_orientation[0],
+            relative_orientation[1],
+            relative_orientation[2],
+            initial_orientation[0],
+            initial_orientation[1],
+            initial_orientation[2],
+            angular_velocity[0],
+            angular_velocity[1],
+            angular_velocity[2],
+            magnetic[0],
+            magnetic[1],
+            magnetic[2],
+            '',
+            '',
+        ]
+
+    def ensure_vector(self, value: object, length: int = 3) -> tuple[object, ...]:
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        if isinstance(value, (list, tuple)):
+            normalized = list(value[:length])
+            if len(normalized) < length:
+                normalized.extend([''] * (length - len(normalized)))
+            return tuple(normalized)
+        return tuple([''] * length)
+
+    def safe_battery_value(self, value: object) -> object:
+        return '' if value is None else value
 
 
     def init_csv(self, filename:str):
         path = pathlib.Path(self.csv_data_dir, f"{filename}.csv")
         with open(path, 'w') as csvfile:
             data = csv.writer(csvfile, delimiter =',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            headers = ['time','steering angle', 'acceleration_x', 'acceleration_y', 'acceleration_z', 'roll', 'pitch', 'yaw', 'omega_x', 'omega_y', 'omega_z','lat','lon']
-            data.writerow(headers)
+            data.writerow(self.CSV_HEADERS)
     
     def add_to_csv(self, filename:str, row:list):
         path = pathlib.Path(self.csv_data_dir, f"{filename}.csv")
