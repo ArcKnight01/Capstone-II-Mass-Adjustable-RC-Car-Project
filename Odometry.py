@@ -29,6 +29,25 @@ class Odometry(object):
                  initial_position : tuple = (0,0,0)
 
                  ):
+        """
+        Initialize the odometry subsystem.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            Whether verbose output should be enabled.
+        enabled : bool, optional
+            Whether odometry processing should be enabled.
+        imu : object, optional
+            IMU instance to use. If ``None``, a default IMU is created.
+        initial_position : tuple, optional
+            Initial position of the robot as an ``(x, y, z)`` tuple.
+
+        Returns
+        -------
+        None
+            This constructor initializes odometry state and calibrates the IMU.
+        """
         self.__clock = Clock()
         self.__imu = imu if imu is not None else IMU()
         try: 
@@ -59,12 +78,33 @@ class Odometry(object):
         time.sleep(1)
 
     def calibrate(self):
+        """
+        Calibrate the odometry subsystem.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method is currently a stub.
+        """
         pass
 
     def get_data(self) -> dict[str,tuple]: 
         """ 
-        You must run this after update to avoid errors 
-        
+        Retrieve the most recently computed odometry values.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        dict[str, tuple]
+            Dictionary containing temperature, acceleration, velocity, position,
+            gravity, orientation, angular velocity, and magnetic field values.
         """
         return {
             'temperature' : self.__temperature,
@@ -81,6 +121,18 @@ class Odometry(object):
         }
     
     def find_north(self):
+        """
+        Estimate a north-referenced orientation from gravity and magnetic vectors.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        list[float]
+            Estimated roll, pitch, and yaw angles in degrees relative to north.
+        """
         # get gravity direction (down)
         gX, gY, gZ = self.__gravity #m/s^2 #previously self.__acceleration, which works if still
         gravityVec = [gX, gY, gZ]/np.sqrt(gX**2+gY**2+gZ**2) # unit vector direction
@@ -98,6 +150,19 @@ class Odometry(object):
         return ([(180/np.pi)*rollN,(180/np.pi)*pitchN,(180/np.pi)*yawN])
 
     def update(self, dt : float = 1.000):
+        """
+        Update odometry values using the latest IMU sample.
+
+        Parameters
+        ----------
+        dt : float, optional
+            Elapsed time in seconds since the previous update.
+
+        Returns
+        -------
+        None
+            This method updates temperature, acceleration, orientation, velocity, and position.
+        """
         self.__temperature = self.__imu.get_temperature()
         
         

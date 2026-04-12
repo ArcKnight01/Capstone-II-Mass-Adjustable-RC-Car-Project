@@ -80,6 +80,33 @@ class Controller(object):
                  odometry : Odometry | None = None,
                  loop_delay : float = 1.000/BNO_UPDATE_FREQUENCY_HZ,
                  ):
+        """
+        Initialize the controller and connected subsystems.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            Whether verbose output should be enabled.
+        enabled : bool, optional
+            Whether the controller should be enabled.
+        log_to_csv : bool, optional
+            Whether controller data should be logged to CSV.
+        csv_data_dir_name : str, optional
+            Directory name used for CSV log output.
+        csv_data_filename : str, optional
+            Base filename used for CSV log output.
+        receiver : RCReceiver | None, optional
+            Receiver instance to use. If ``None``, a default receiver is created.
+        odometry : Odometry | None, optional
+            Odometry instance to use. If ``None``, a default odometry instance is created.
+        loop_delay : float, optional
+            Delay between controller loop iterations in seconds.
+
+        Returns
+        -------
+        None
+            This constructor initializes the controller state.
+        """
         
         log_dir = './'
         self.csv_data_filename = csv_data_filename
@@ -131,10 +158,34 @@ class Controller(object):
     
     # calibrate the odometry system
     def calibrate():
+        """
+        Calibrate the controller odometry system.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method is currently a stub.
+        """
         # TODO this is a stub, should we keep the calibration in the init function of this class?
         pass
 
     def run(self):
+        """
+        Run the controller update loop until interrupted.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method continuously calls :meth:`update`.
+        """
         try: 
             while True: 
                 self.update()
@@ -143,6 +194,18 @@ class Controller(object):
 
 
     def update(self):
+        """
+        Update all controller subsystems and log the current sample.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method updates battery, timing, receiver, odometry, CSV logging, and console output.
+        """
 
         # update the battery
         self.__battery.update()
@@ -208,6 +271,21 @@ class Controller(object):
         time.sleep(self.__loop_delay)
         
     def build_log_row(self, receiver_data_dict: dict[str, int], odometry_data: dict[str, object]) -> list[object]:
+        """
+        Build a CSV log row from receiver, battery, and odometry data.
+
+        Parameters
+        ----------
+        receiver_data_dict : dict[str, int]
+            Parsed receiver data containing the latest steering values.
+        odometry_data : dict[str, object]
+            Dictionary containing the latest odometry and IMU-derived values.
+
+        Returns
+        -------
+        list[object]
+            Ordered row values matching :attr:`CSV_HEADERS`.
+        """
         battery_percent = self.safe_battery_value(self.__battery.retrieve_percentage())
         battery_seconds_left = self.safe_battery_value(self.__battery.retrieve_seconds_left())
         battery_time_remaining = self.safe_battery_value(self.__battery.get_time_remaining())
@@ -270,6 +348,21 @@ class Controller(object):
         ]
 
     def ensure_vector(self, value: object, length: int = 3) -> tuple[object, ...]:
+        """
+        Normalize a vector-like value to a fixed-length tuple.
+
+        Parameters
+        ----------
+        value : object
+            Input value that may be a NumPy array, list, tuple, or another type.
+        length : int, optional
+            Desired tuple length.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Tuple of the requested length, padded with empty strings when needed.
+        """
         if isinstance(value, np.ndarray):
             value = value.tolist()
         if isinstance(value, (list, tuple)):
@@ -280,16 +373,57 @@ class Controller(object):
         return tuple([''] * length)
 
     def safe_battery_value(self, value: object) -> object:
+        """
+        Convert ``None`` battery values to an empty string for logging.
+
+        Parameters
+        ----------
+        value : object
+            Battery-derived value to normalize.
+
+        Returns
+        -------
+        object
+            The original value, or an empty string if the value is ``None``.
+        """
         return '' if value is None else value
 
 
     def init_csv(self, filename:str):
+        """
+        Create or overwrite the CSV log file and write the header row.
+
+        Parameters
+        ----------
+        filename : str
+            Base filename for the CSV log.
+
+        Returns
+        -------
+        None
+            This method writes the CSV header row to disk.
+        """
         path = pathlib.Path(self.csv_data_dir, f"{filename}.csv")
         with open(path, 'w') as csvfile:
             data = csv.writer(csvfile, delimiter =',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
             data.writerow(self.CSV_HEADERS)
     
     def add_to_csv(self, filename:str, row:list):
+        """
+        Append a single row of data to the CSV log file.
+
+        Parameters
+        ----------
+        filename : str
+            Base filename for the CSV log.
+        row : list
+            Row of values to append.
+
+        Returns
+        -------
+        None
+            This method appends the provided row to the CSV file.
+        """
         path = pathlib.Path(self.csv_data_dir, f"{filename}.csv")
         self.__data = row
         with open(path, 'a') as csvfile:

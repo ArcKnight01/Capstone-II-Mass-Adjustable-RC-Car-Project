@@ -18,17 +18,20 @@ if robotSupported:
 
 import math
 
-def quaternion_rotation_matrix(Q):
+def quaternion_rotation_matrix(Q: tuple[float, float, float, float] | list[float] | np.ndarray) -> np.ndarray:
     """
-    Covert a quaternion into a full three-dimensional rotation matrix.
- 
-    Input
-    :param Q: A 4 element array representing the quaternion (q0,q1,q2,q3) 
- 
-    Output
-    :return: A 3x3 element matrix representing the full 3D rotation matrix. 
-             This rotation matrix converts a point in the local reference 
-             frame to a point in the global reference frame.
+    Convert a quaternion into a three-dimensional rotation matrix.
+
+    Parameters
+    ----------
+    Q : tuple[float, float, float, float] | list[float] | numpy.ndarray
+        Quaternion values ordered as ``(q0, q1, q2, q3)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``3 x 3`` rotation matrix that converts points from the local reference
+        frame to the global reference frame.
     """
     # Extract the values from Q
     q0 = Q[0]
@@ -58,9 +61,25 @@ def quaternion_rotation_matrix(Q):
                             
     return rot_matrix
 
-def quaternion_to_euler_angle(w, x, y, z):
+def quaternion_to_euler_angle(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
     """
-    https://stackoverflow.com/questions/56207448/efficient-quaternions-to-euler-transformation
+    Convert quaternion components into Euler angles in degrees.
+
+    Parameters
+    ----------
+    w : float
+        Scalar quaternion component.
+    x : float
+        X quaternion component.
+    y : float
+        Y quaternion component.
+    z : float
+        Z quaternion component.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        Euler angles ``(roll, pitch, yaw)`` in degrees.
     """
     ysqr = y * y
 
@@ -139,6 +158,27 @@ class IMU(object):
                  mode : Mode = Mode.NDOF_MODE,
                  use_manual_calibration : bool = False
                  ):
+        """
+        Initialize the BNO055 IMU interface.
+
+        Parameters
+        ----------
+        enabled : bool, optional
+            Whether the IMU should be enabled.
+        verbose : bool, optional
+            Whether verbose output should be enabled.
+        use_alternate_imu_address : bool, optional
+            Whether to use the alternate I2C address.
+        mode : Mode, optional
+            BNO055 operating mode to use.
+        use_manual_calibration : bool, optional
+            Whether manual calibration should be used.
+
+        Returns
+        -------
+        None
+            This constructor initializes the IMU sensor interface.
+        """
         
         self.__verbose = verbose
         self.__enabled = enabled
@@ -157,7 +197,19 @@ class IMU(object):
         self.__calibrated : bool = False
         print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
 
-    def get_temperature(self):
+    def get_temperature(self) -> int:
+        """
+        Retrieve the sensor temperature.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        int
+            Sensor temperature in degrees Celsius.
+        """
         # global last_val  # noqa: PLW0603
         result = self.__sensor.temperature
         if abs(result - self.__last_val) == 128:
@@ -167,13 +219,49 @@ class IMU(object):
         self.__last_val = result
         return result
     
-    def set_zeroed_orientation(self):
+    def set_zeroed_orientation(self) -> None:
+        """
+        Store the current Euler orientation as the zero reference.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method updates the stored orientation offset.
+        """
         self.__zeroed_orientation_offset = self.__sensor.euler
     
-    def get_zeroed_orientation(self):
+    def get_zeroed_orientation(self) -> tuple[float, float, float]:
+        """
+        Get the stored zero-reference orientation.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Stored zeroed Euler orientation.
+        """
         return self.__zeroed_orientation_offset 
 
-    def calibrate(self):
+    def calibrate(self) -> None:
+        """
+        Run the full IMU calibration sequence.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method calibrates the magnetometer, accelerometer, and gyroscope.
+        """
         self.calibrate_magnetometer()
         time.sleep(1)
         self.calibrate_accelerometer()
@@ -183,7 +271,19 @@ class IMU(object):
         self.set_zeroed_orientation()
         print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}")
     
-    def calibrate_magnetometer(self):
+    def calibrate_magnetometer(self) -> None:
+        """
+        Calibrate the IMU magnetometer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method blocks until the magnetometer calibration completes.
+        """
         print("Magnetometer: Move sensor away from magnetic interference or shields. Perform the figure-eight until calibrated.")
         while not self.__sensor.calibration_status[3] == 3:
             # Calibration Dance Step One: Magnetometer
@@ -195,7 +295,19 @@ class IMU(object):
         time.sleep(1)
         print(f"  Offsets_Magnetometer:  {self.__sensor.offsets_magnetometer}")
 
-    def calibrate_accelerometer(self):
+    def calibrate_accelerometer(self) -> None:
+        """
+        Calibrate the IMU accelerometer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method blocks until the accelerometer calibration completes.
+        """
         print("Accelerometer: Perform the six-step calibration dance.")
         print("Place sensor board into six stable positions for a few seconds each:")
         print("1) x-axis right, y-axis up,    z-axis away")
@@ -222,7 +334,19 @@ class IMU(object):
         print(f"  Offsets_Accelerometer: {self.__sensor.offsets_accelerometer}")
         
 
-    def calibrate_gyro(self):
+    def calibrate_gyro(self) -> None:
+        """
+        Calibrate the IMU gyroscope.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method blocks until the gyroscope calibration completes.
+        """
         print("Gyroscope: Perform the hold-in-place calibration dance.")
         print("Place sensor in any stable position for a few seconds\n(Accelerometer calibration may also calibrate the gyro)")
         while not self.__sensor.calibration_status[1] == 3:
@@ -236,43 +360,159 @@ class IMU(object):
         print(f"  Offsets_Gyroscope:     {self.__sensor.offsets_gyroscope}")
 
 
-    def get_quaternion(self):
+    def get_quaternion(self) -> tuple[float, float, float, float]:
+        """
+        Retrieve the current orientation quaternion.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float, float]
+            Current quaternion from the IMU.
+        """
         return self.__sensor.quaternion
     
-    def get_euler_angles(self):
+    def get_euler_angles(self) -> tuple[float, float, float]:
+        """
+        Retrieve the current Euler orientation angles.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Current Euler angles from the IMU.
+        """
         return self.__sensor.euler
     
-    def get_rotation_matrix(self):
+    def get_rotation_matrix(self) -> np.ndarray:
+        """
+        Compute a rotation matrix from the current quaternion.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        numpy.ndarray
+            ``3 x 3`` rotation matrix derived from the current quaternion.
+        """
         # TODO calculate 3x3 rotation matrix from quaternion
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
         return quaternion_rotation_matrix(self.get_quaternion())
     
-    def get_linear_acceleration(self):
+    def get_linear_acceleration(self) -> tuple[float, float, float]:
         """
-        Returns the linear acceleration, without gravity, in m/s. 
-        Returns an empty tuple of length 3 when this property has been disabled by the current mode.
+        Retrieve the current linear acceleration.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Linear acceleration in meters per second squared, excluding gravity.
         """
         return self.__sensor.linear_acceleration
     
-    def get_gravity_vector(self):
+    def get_gravity_vector(self) -> tuple[float, float, float]:
+        """
+        Retrieve the current gravity vector.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Gravity vector in meters per second squared.
+        """
         return self.__sensor.gravity
 
-    def get_raw_acceleration(self):
+    def get_raw_acceleration(self) -> tuple[float, float, float]:
+        """
+        Retrieve the raw accelerometer reading.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Raw acceleration values from the sensor.
+        """
         return self.__sensor.acceleration
     
-    def get_raw_gyro(self):
+    def get_raw_gyro(self) -> tuple[float, float, float]:
+        """
+        Retrieve the raw gyroscope reading.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Raw angular velocity values from the sensor.
+        """
         return self.__sensor.gyro
     
-    def get_raw_magnetometer(self):
+    def get_raw_magnetometer(self) -> tuple[float, float, float]:
+        """
+        Retrieve the raw magnetometer reading.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[float, float, float]
+            Raw magnetic field values from the sensor.
+        """
         return self.__sensor.magnetic
 
-    def get_calibration_statuses(self):
+    def get_calibration_statuses(self) -> None:
+        """
+        Print the current IMU calibration status.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method prints the current calibration state.
+        """
         status = self.__sensor.calibration_status
         calibrated = "CALIBRATED" if self.__sensor.calibrated else "NOT CALIBRATED"
 
         print(f"The IMU is {calibrated}. (sys,gyro,accel,mag = {status})")
 
-    def get_calibration_data(self):
+    def get_calibration_data(self) -> tuple[tuple[int, int, int, int], bool]:
+        """
+        Retrieve the IMU calibration tuple and calibrated flag.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        tuple[tuple[int, int, int, int], bool]
+            Calibration status tuple and overall calibrated state.
+        """
         return self.__sensor.calibration_status, self.__sensor.calibrated
 
 if __name__ == "__main__":
