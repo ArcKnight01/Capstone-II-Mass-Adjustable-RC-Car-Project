@@ -268,5 +268,6 @@ class IMU(object):
 
     def test(self):
         self.__sensor.
+        
 if __name__ == "__main__":
     pass

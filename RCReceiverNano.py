@@ -1,5 +1,6 @@
 import serial
 import sys
+import time
 
 def checkthesum(msg :str):
     """checksum logic"""
@@ -43,27 +44,49 @@ class RCReceiver(object):
                  port : str = '/dev/ttyUSB0', 
                  verbose : bool = False
                  ):
-        
+        self.__set_baudrate = baudrate
+        self.__port = port
         self.__verbose = verbose
         self.__serial = serial.Serial(port, baudrate, timeout=1)
 
     def get_data(self) -> dict[str, int] | None:
-        line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
-        if line.startswith('$STEER'):
-            result = parse_steer(line)
-            if result:
-                return result
+        if self.__serial.is_open:
+            line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
+            if line.startswith('$STEER'):
+                result = parse_steer(line)
+                if result:
+                    return result
+        else: 
+            if self.__verbose:
+                print(f"Serial port at {self.__port} is not open")
         return None
+    
+    # function to clear the serial monitor, such as for calibration time
+    def reset(self):
+
+        # Clear input buffer, discarding all that is in the buffer.
+        self.__serial.reset_input_buffer()
+
+        # Flush write buffers, if applicable.
+        self.__serial.flush() #TODO This might not be needed? We are reading data from the Nano via the serial usb port on the Raspberry Pi in NMEA convention, not sending data to the Nano.
+        if self.__verbose:
+            print(f"Cleared {self.__serial.in_waiting} incoming bytes from the serial queue")
 
 if __name__ == "__main__":
     if(sys.argv[1:] != list()):
-        print(f"test_points={sys.argv[1:][0]}, verbose={sys.argv[1:][1]}")
         print("args passed!")
         print(sys.argv[1:])
     else:
-        print("no args passed!")
+        print("no args passed! if you want to simulate calibration time, add an int after running this file (e.g. python3 RCReceiverNano.py 4 to simulate 4 seconds calibration time to build up serial buffer)")
        
     rc_receiver = RCReceiver()
+    if(sys.argv[1:] != list()):
+        secs_wait : int = int(sys.argv[1:][0])
+        print(f"waiting {secs_wait} seconds to simulate calibration time between initializing the RCReceiver and reading data causing buffer build up")
+        time.sleep(float(secs_wait))
+        do_flush = (True if str(sys.argv[1:][1])=='True' else False)
+        if do_flush:
+            rc_receiver.reset()
 
     while(True):
         result = rc_receiver.get_data()
