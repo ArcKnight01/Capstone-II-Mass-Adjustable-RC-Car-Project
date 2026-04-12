@@ -11,6 +11,7 @@ try:
 except:
     import platform
     robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
+    
 if robotSupported:
     import board
     import busio

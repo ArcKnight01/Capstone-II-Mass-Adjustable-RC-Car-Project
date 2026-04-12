@@ -8,6 +8,7 @@ import time
 
 try:
     from gps import WATCH_ENABLE, WATCH_NEWSTYLE, gps
+    
 except ImportError:  # pragma: no cover - depends on robot environment
     WATCH_ENABLE = 0
     WATCH_NEWSTYLE = 0
@@ -106,7 +107,7 @@ class GPS_System:
             return
 
         self.__session = gps(host=self.__host, port=self.__port, mode=WATCH_ENABLE | WATCH_NEWSTYLE)
-        self.__connected = True
+        self.__connected = False
         self.__last_error = None
         if self.__verbose:
             print(f"Connected to gpsd at {self.__host}:{self.__port}")
@@ -141,11 +142,12 @@ class GPS_System:
         Stop the background reader thread and close the gpsd connection.
         """
         self.__running = False
+        # Closing first helps unblock a reader thread waiting on gpsd I/O.
+        self.close()
         worker = self.__worker
         if worker is not None and worker.is_alive():
             worker.join(timeout=2.0)
         self.__worker = None
-        self.close()
 
     def update_once(self) -> GPSFix:
         """
@@ -165,6 +167,8 @@ class GPS_System:
 
         report = getattr(self.__session, "data", None)
         if report is not None:
+            self.__connected = True
+            self.__last_error = None
             self.__handle_report(report)
         return self.get_fix()
 
@@ -227,9 +231,10 @@ class GPS_System:
             except Exception as exc:
                 self.__last_error = str(exc)
                 self.close()
-                if self.__verbose:
+                if self.__verbose and self.__running:
                     print(f"GPS reader reconnecting after error: {exc}")
-                time.sleep(self.__reconnect_delay_sec)
+                if self.__running:
+                    time.sleep(self.__reconnect_delay_sec)
 
     def __handle_report(self, report: Any) -> None:
         report_class = gpsd_report_get(report, "class")
@@ -249,26 +254,54 @@ class GPS_System:
     def __update_from_tpv(self, report: Any) -> None:
         mode = int(gpsd_report_get(report, "mode", 0) or 0)
         timestamp = gpsd_report_get(report, "time")
+        latitude = safe_float(gpsd_report_get(report, "lat"))
+        longitude = safe_float(gpsd_report_get(report, "lon"))
+        altitude_hae_m = safe_float(gpsd_report_get(report, "altHAE"))
+        altitude_msl_m = safe_float(gpsd_report_get(report, "altMSL"))
+        speed_m_s = safe_float(gpsd_report_get(report, "speed"))
+        track_deg = safe_float(gpsd_report_get(report, "track"))
+        climb_m_s = safe_float(gpsd_report_get(report, "climb"))
+        eph_m = safe_float(gpsd_report_get(report, "eph"))
+        epv_m = safe_float(gpsd_report_get(report, "epv"))
+        epx_m = safe_float(gpsd_report_get(report, "epx"))
+        epy_m = safe_float(gpsd_report_get(report, "epy"))
+        eps_m_s = safe_float(gpsd_report_get(report, "eps"))
+        device = gpsd_report_get(report, "device")
+        status = gpsd_report_get(report, "status")
 
         with self.__lock:
             self.__last_fix.timestamp = timestamp
             self.__last_fix.timestamp_datetime = parse_gpsd_time(timestamp)
             self.__last_fix.mode = mode
             self.__last_fix.mode_name = fix_mode_label(mode)
-            self.__last_fix.latitude = safe_float(gpsd_report_get(report, "lat"))
-            self.__last_fix.longitude = safe_float(gpsd_report_get(report, "lon"))
-            self.__last_fix.altitude_hae_m = safe_float(gpsd_report_get(report, "altHAE"))
-            self.__last_fix.altitude_msl_m = safe_float(gpsd_report_get(report, "altMSL"))
-            self.__last_fix.speed_m_s = safe_float(gpsd_report_get(report, "speed"))
-            self.__last_fix.track_deg = safe_float(gpsd_report_get(report, "track"))
-            self.__last_fix.climb_m_s = safe_float(gpsd_report_get(report, "climb"))
-            self.__last_fix.eph_m = safe_float(gpsd_report_get(report, "eph"))
-            self.__last_fix.epv_m = safe_float(gpsd_report_get(report, "epv"))
-            self.__last_fix.epx_m = safe_float(gpsd_report_get(report, "epx"))
-            self.__last_fix.epy_m = safe_float(gpsd_report_get(report, "epy"))
-            self.__last_fix.eps_m_s = safe_float(gpsd_report_get(report, "eps"))
-            self.__last_fix.device = gpsd_report_get(report, "device")
-            self.__last_fix.status = gpsd_report_get(report, "status")
+            if latitude is not None:
+                self.__last_fix.latitude = latitude
+            if longitude is not None:
+                self.__last_fix.longitude = longitude
+            if altitude_hae_m is not None:
+                self.__last_fix.altitude_hae_m = altitude_hae_m
+            if altitude_msl_m is not None:
+                self.__last_fix.altitude_msl_m = altitude_msl_m
+            if speed_m_s is not None:
+                self.__last_fix.speed_m_s = speed_m_s
+            if track_deg is not None:
+                self.__last_fix.track_deg = track_deg
+            if climb_m_s is not None:
+                self.__last_fix.climb_m_s = climb_m_s
+            if eph_m is not None:
+                self.__last_fix.eph_m = eph_m
+            if epv_m is not None:
+                self.__last_fix.epv_m = epv_m
+            if epx_m is not None:
+                self.__last_fix.epx_m = epx_m
+            if epy_m is not None:
+                self.__last_fix.epy_m = epy_m
+            if eps_m_s is not None:
+                self.__last_fix.eps_m_s = eps_m_s
+            if device is not None:
+                self.__last_fix.device = device
+            if status is not None:
+                self.__last_fix.status = status
 
         if self.__verbose:
             fix = self.get_fix()
