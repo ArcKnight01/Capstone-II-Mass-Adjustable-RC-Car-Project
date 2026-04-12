@@ -7,10 +7,10 @@ import numpy as np
 from IMUUtil import *
 
 try:
-    robotSupported = os.uname().nodename == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = os.uname().nodename == ('terminatorpi' or 'robotpi' or 'carpi')
 except:
     import platform
-    robotSupported = platform.uname().node == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
 if robotSupported:
     import board
     import busio
