@@ -272,5 +272,44 @@ class IMU(object):
 
         print(f"The IMU is {calibrated}. (sys,gyro,accel,mag = {status})")
 
+    def get_calibration_data(self):
+        return self.__sensor.calibration_status, self.__sensor.calibrated
+
 if __name__ == "__main__":
-    pass
+    if not robotSupported:
+        print("IMU test loop can only run on supported robot hardware.")
+        sys.exit(1)
+
+    imu = IMU()
+    update_period_sec = 1 / BNO_UPDATE_FREQUENCY_HZ
+
+    print("Starting IMU test loop. Press Ctrl+C to stop.")
+    try:
+        while True:
+            temperature = imu.get_temperature()
+            quaternion = imu.get_quaternion()
+            euler = imu.get_euler_angles()
+            rotation_matrix = imu.get_rotation_matrix()
+            linear_acceleration = imu.get_linear_acceleration()
+            gravity = imu.get_gravity_vector()
+            raw_acceleration = imu.get_raw_acceleration()
+            raw_gyro = imu.get_raw_gyro()
+            raw_magnetometer = imu.get_raw_magnetometer()
+            calibration_status, calibrated = imu.get_calibration_data()
+
+            print("=" * 60)
+            print(f"Temperature (C):      {temperature}")
+            print(f"Quaternion:           {quaternion}")
+            print(f"Euler Angles:         {euler}")
+            print(f"Rotation Matrix:\n{rotation_matrix}")
+            print(f"Linear Accel (m/s^2): {linear_acceleration}")
+            print(f"Gravity (m/s^2):      {gravity}")
+            print(f"Raw Accel (m/s^2):    {raw_acceleration}")
+            print(f"Raw Gyro (deg/s):     {raw_gyro}")
+            print(f"Raw Magnet (uT):      {raw_magnetometer}")
+            print(f"Calibration Status:   {calibration_status}")
+            print(f"Is Calibrated:        {calibrated}")
+
+            time.sleep(update_period_sec)
+    except KeyboardInterrupt:
+        print("\nStopped IMU test loop.")
