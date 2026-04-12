@@ -54,15 +54,6 @@ class RCReceiver(object):
             if result:
                 return result
         return None
-    
-# ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
-
-# while True:
-#     line = ser.readline().decode('utf-8', errors='ignore').strip()
-#     if line.startswith('$STEER'):
-#         result = parse_steer(line)
-#         if result:
-#             print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
 
 if __name__ == "__main__":
     if(sys.argv[1:] != list()):
