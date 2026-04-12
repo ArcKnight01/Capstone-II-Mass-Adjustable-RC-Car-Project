@@ -266,8 +266,11 @@ class IMU(object):
     def get_raw_magnetometer(self):
         return self.__sensor.magnetic
 
-    def test(self):
-        self.__sensor.
-        
+    def get_calibration_statuses(self):
+        status = self.__sensor.calibration_status
+        calibrated = "CALIBRATED" if self.__sensor.calibrated else "NOT CALIBRATED"
+
+        print(f"The IMU is {calibrated}. (sys,gyro,accel,mag = {status})")
+
 if __name__ == "__main__":
     pass
