@@ -2,7 +2,18 @@ import time
 
 class Clock(object):
     def __init__(self):
-        """initialize the robot's clock"""
+        """
+        Initialize the robot clock.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This constructor initializes the raw, current, and run times.
+        """
         #intialize the raw time, the time in seconds since the Epoch (Jan 1st 1970)
         self.__raw_time = time.time() 
         #initialize raw_start_time, the time in seconds since the Epoch, 
@@ -15,58 +26,138 @@ class Clock(object):
         pass
     def __update_raw_time(self):
         """
-        updates the raw time of the clock,\n
-        which is the time since the Epoch,\n
-        or Jan 1st 1970.
+        Update the raw epoch time stored by the clock.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method refreshes the internal raw time value.
         """
         self.__raw_time = time.time()
 
     def __update_time(self):
         """
-        updates the current time and the run time,\n
-        where the current time is the time since the\n
-        robot\'s raw start time, and the run time is\n
-        the time since the robot was last reset.
+        Update derived current and run times.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method updates the current time since startup and the run time since reset.
         """
         self.__current_time = self.__raw_time - self.__raw_start_time
         self.__run_time = self.__raw_time - self.__start_time
     
     def __get_current_time(self):
         """
-        returns the time since the robot\'s raw start time,\n
-        this is not affected by resets.
+        Retrieve the elapsed time since clock initialization.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Current time since the raw start time.
         """
         return self.__current_time
     
     def __get_raw_time(self):
-        "returns the time since the Epoch (Jan 1st 1970)"
+        """
+        Retrieve the raw epoch time.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Time since the Unix epoch in seconds.
+        """
         return(self.__raw_time)
     
     def get_time_of_last_reset(self):
         """
-        returns the raw time at which the robot was last reset
+        Retrieve the raw time of the most recent reset.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Raw time at which the clock was last reset.
         """
         return(self.__start_time)
     
     def get_raw_start_time(self):
         """
-        returns the raw time of when the robot first started, 
-        not including resets"""
+        Retrieve the raw start time of the clock.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Raw time when the clock was first initialized.
+        """
         return self.__raw_start_time
     
     def __get_run_time(self):
-        """returns the time since the robot was last reset"""
+        """
+        Retrieve the elapsed time since the last reset.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Run time in seconds since the last reset.
+        """
         return self.__run_time
     
     def update(self):
-        """updates all time variables"""
+        """
+        Refresh all internal clock values.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method updates raw, current, and run times.
+        """
         self.__update_raw_time()
         self.__update_time()
 
     def reset(self):
         """
-        resets the run_time to 0 seconds,\n
-        and sets the current start_time to be the current raw_time
+        Reset the run timer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method resets run time and updates the reset reference time.
         """
         self.__update_raw_time()
         self.__start_time = self.__raw_time
@@ -74,10 +165,17 @@ class Clock(object):
 
     def get_time(self, timeType:str="run"):
         """
-        gets the time, with an optional parameter to specify \"raw\", \"current\", or \"run\" time. The default is \"run\"\n
-        run time => the time since the last reset.\n
-        current time => the time since the robot\'s clock was initialized.\n
-        raw time => the time since the Epoch on 1/1/1970.\n
+        Retrieve a requested clock time value.
+
+        Parameters
+        ----------
+        timeType : str, optional
+            Time type to retrieve. Supported values are ``"run"``, ``"current"``, and ``"raw"``.
+
+        Returns
+        -------
+        float
+            Requested time value in seconds.
         """
         assert timeType in ["run", "current", "raw"]
         if(timeType=="run"):

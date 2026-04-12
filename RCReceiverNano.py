@@ -2,8 +2,20 @@ import serial
 import sys
 import time
 
-def checkthesum(msg :str):
-    """checksum logic"""
+def checkthesum(msg: str) -> bool:
+    """
+    Validate the checksum of an NMEA-style message.
+
+    Parameters
+    ----------
+    msg : str
+        NMEA-style message containing a checksum suffix.
+
+    Returns
+    -------
+    bool
+        ``True`` if the checksum matches, otherwise ``False``.
+    """
     try:
         fields = msg.strip().split('*')
         cmd = fields[0][1:]  # strip leading $
@@ -14,14 +26,38 @@ def checkthesum(msg :str):
         return False
 
 def nmea_checksum(cmd :str) -> int:
-    """XOR all bytes """
+    """
+    Compute the XOR checksum for an NMEA command payload.
+
+    Parameters
+    ----------
+    cmd : str
+        NMEA command payload without the leading ``$`` or trailing checksum.
+
+    Returns
+    -------
+    int
+        XOR checksum value for the payload.
+    """
     checksum = 0
     for c in cmd:
         checksum ^= ord(c)
     return checksum
 
-def parse_steer(msg  : str):
-    """Parse $STEER,pulseWidth,angle*XX"""
+def parse_steer(msg: str) -> dict[str, int] | None:
+    """
+    Parse a ``$STEER`` NMEA-style message.
+
+    Parameters
+    ----------
+    msg : str
+        Message of the form ``$STEER,pulseWidth,angle*XX``.
+
+    Returns
+    -------
+    dict[str, int] | None
+        Parsed steering data dictionary, or ``None`` if parsing fails.
+    """
     if not checkthesum(msg):
         print(f"Checksum mismatch, skipping: {msg}")
         return None
@@ -44,17 +80,60 @@ class RCReceiver(object):
                  port : str = '/dev/ttyUSB0', 
                  verbose : bool = False
                  ):
+        """
+        Initialize the RC receiver serial interface.
+
+        Parameters
+        ----------
+        baudrate : int, optional
+            Serial baud rate used by the receiver.
+        port : str, optional
+            Serial device path.
+        verbose : bool, optional
+            Whether verbose output should be enabled.
+
+        Returns
+        -------
+        None
+            This constructor initializes the serial connection.
+        """
         self.__set_baudrate = baudrate
         self.__port = port
         self.__verbose = verbose
         self.__serial = serial.Serial(port, baudrate, timeout=1)
 
     def __parse_line(self, line: str) -> dict[str, int] | None:
+        """
+        Parse a single line from the receiver.
+
+        Parameters
+        ----------
+        line : str
+            Raw line read from the serial device.
+
+        Returns
+        -------
+        dict[str, int] | None
+            Parsed receiver data if the line is recognized, otherwise ``None``.
+        """
         if line.startswith('$STEER'):
             return parse_steer(line)
         return None
 
     def get_data(self, latest: bool = True) -> dict[str, int] | None:
+        """
+        Read steering data from the receiver.
+
+        Parameters
+        ----------
+        latest : bool, optional
+            Whether to drain the input buffer and return the most recent valid sample.
+
+        Returns
+        -------
+        dict[str, int] | None
+            Parsed steering data, or ``None`` if no valid message is available.
+        """
         if self.__serial.is_open:
             latest_result = None
 
@@ -79,6 +158,18 @@ class RCReceiver(object):
     
     # function to clear the serial monitor, such as for calibration time
     def reset(self):
+        """
+        Clear queued receiver data from the serial input buffer.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+            This method discards any queued serial input.
+        """
         if not self.__serial.is_open:
             if self.__verbose:
                 print(f"Serial port at {self.__port} is not open")

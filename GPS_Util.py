@@ -11,7 +11,20 @@ import pytz
 
 from pynmea2 import pynmea2
 
-def nmea_lat(lat_deg):
+def nmea_lat(lat_deg: float) -> str:
+    """
+    Convert decimal latitude to NMEA latitude format.
+
+    Parameters
+    ----------
+    lat_deg : float
+        Latitude in decimal degrees.
+
+    Returns
+    -------
+    str
+        Latitude formatted for NMEA messages.
+    """
     val = np.abs(lat_deg)
     degval = np.floor(val)
     minflt = (val - degval)*60
@@ -19,7 +32,20 @@ def nmea_lat(lat_deg):
     muval = int((minflt - minval)*1e6)
     return f"{int(degval):02d}{int(minval):02d}.{int(muval):06d}"
 
-def nmea_lon(lon_deg):
+def nmea_lon(lon_deg: float) -> str:
+    """
+    Convert decimal longitude to NMEA longitude format.
+
+    Parameters
+    ----------
+    lon_deg : float
+        Longitude in decimal degrees.
+
+    Returns
+    -------
+    str
+        Longitude formatted for NMEA messages.
+    """
     val = np.abs(lon_deg)
     degval = np.floor(val)
     minflt = (val - degval)*60
