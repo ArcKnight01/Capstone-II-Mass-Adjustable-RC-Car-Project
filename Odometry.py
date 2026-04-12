@@ -25,19 +25,19 @@ class Odometry(object):
     def __init__(self,
                  verbose:bool=True, 
                  enabled:bool=True,
-                 imu = IMU(),
+                 imu = None,
                  initial_position : tuple = (0,0,0)
 
                  ):
         self.__clock = Clock()
-        self.__imu = imu
+        self.__imu = imu if imu is not None else IMU()
         try: 
-            imu.calibrate()
+            self.__imu.calibrate()
         except: 
             print("IMU failed to calibrate!")
         pass
 
-        print(f"IMU Calibration Status: {imu.calibrated}")
+        print(f"IMU Calibration Status: {self.__imu.calibrated}")
 
         #Determine whether to print data to terminal
         self.__verbose : bool = verbose

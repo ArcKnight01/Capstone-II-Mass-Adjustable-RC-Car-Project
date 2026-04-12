@@ -49,13 +49,29 @@ class RCReceiver(object):
         self.__verbose = verbose
         self.__serial = serial.Serial(port, baudrate, timeout=1)
 
-    def get_data(self) -> dict[str, int] | None:
+    def __parse_line(self, line: str) -> dict[str, int] | None:
+        if line.startswith('$STEER'):
+            return parse_steer(line)
+        return None
+
+    def get_data(self, latest: bool = True) -> dict[str, int] | None:
         if self.__serial.is_open:
+            latest_result = None
+
+            if latest:
+                while self.__serial.in_waiting > 0:
+                    line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
+                    result = self.__parse_line(line)
+                    if result is not None:
+                        latest_result = result
+
+                if latest_result is not None:
+                    return latest_result
+
             line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
-            if line.startswith('$STEER'):
-                result = parse_steer(line)
-                if result:
-                    return result
+            result = self.__parse_line(line)
+            if result is not None:
+                return result
         else: 
             if self.__verbose:
                 print(f"Serial port at {self.__port} is not open")
@@ -63,14 +79,18 @@ class RCReceiver(object):
     
     # function to clear the serial monitor, such as for calibration time
     def reset(self):
+        if not self.__serial.is_open:
+            if self.__verbose:
+                print(f"Serial port at {self.__port} is not open")
+            return
+
+        queued_bytes = self.__serial.in_waiting
 
         # Clear input buffer, discarding all that is in the buffer.
         self.__serial.reset_input_buffer()
 
-        # Flush write buffers, if applicable.
-        self.__serial.flush() #TODO This might not be needed? We are reading data from the Nano via the serial usb port on the Raspberry Pi in NMEA convention, not sending data to the Nano.
         if self.__verbose:
-            print(f"Cleared {self.__serial.in_waiting} incoming bytes from the serial queue")
+            print(f"Cleared {queued_bytes} incoming bytes from the serial queue")
 
 if __name__ == "__main__":
     if(sys.argv[1:] != list()):

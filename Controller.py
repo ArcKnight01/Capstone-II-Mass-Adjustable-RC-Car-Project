@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 import csv
 import pathlib
+import time
 from Odometry import *
 from RCReceiverNano import RCReceiver
 from RobotClock import Clock
@@ -27,34 +28,60 @@ class Controller(object):
                  log_to_csv:bool=True,
                  csv_data_dir_name : str = 'data',
                  csv_data_filename : str = 'data',
-                 receiver : RCReceiver = RCReceiver(),
-                 odometry : Odometry = Odometry(),
-                 
+                 receiver : RCReceiver | None = None,
+                 odometry : Odometry | None = None,
+                 loop_delay : float = 1.000,
                  ):
+        
         log_dir = './'
         self.csv_data_filename = csv_data_filename
+
         # set the csv data directory. Make and create the directory if it doesnt exist
         self.csv_data_dir = pathlib.Path(log_dir, csv_data_dir_name)
         self.csv_data_dir.mkdir(parents=True, exist_ok=True)
         self.init_csv(self.csv_data_filename)
 
-        self.data = {"time":list(), "steering_angle":list(), "imu_data":list()}
+        # self.data = {"time":list(), "steering_angle":list(), "imu_data":list()}
+
         self.__battery = Battery()
+
         self.__clock = Clock()
+
         self.__tickTimer = Clock()
+
         self.__tickTimer.reset()
         self.__tickTimer.update()
+
+        # This is used for odometry -- we need the time between the current odometry info at t and the previous odometry info at t-1)
         self.__delT = self.__tickTimer.get_time("run")
+
+        self.__clock.reset()
+        self.__clock.update()
+
+        # This is used for time based control logic (not implemented yet), such as doing something after 5 seconds since reset. (could possibly be used for logging later too)
+        self.__runtime = self.__clock.get_time("run")
+
+        # This is used for logging.
+        self.__time = self.__clock.get_time("current")
+
+        self.__loop_delay = loop_delay
+
+        # Build odometry first because IMU calibration can take a while.
+        self.odometry = odometry if odometry is not None else Odometry()
+
+        # Open or flush the receiver only after calibration so startup backlog
+        # from the Nano does not survive into the main control loop.
+        self.receiver = receiver if receiver is not None else RCReceiver()
+        self.receiver.reset()
+
+        # Start timing only after startup work such as calibration has finished.
+        self.__tickTimer.reset()
         self.__clock.reset()
         self.__clock.update()
         self.__runtime = self.__clock.get_time("run")
         self.__time = self.__clock.get_time("current")
-        self.receiver = receiver
-        self.odometry = odometry
        
-
         print("Initialized Controller")
-        pass
     
     # calibrate the odometry system
     def calibrate():
@@ -70,15 +97,28 @@ class Controller(object):
 
 
     def update(self):
+
         # update the battery
         self.__battery.update()
         
-        # get the time
+        # Measure elapsed time since the previous loop for odometry integration.
         self.__tickTimer.update()
 
+        # Get the elapsed time since the previous odometry info (delta time) for odometry integration
         self.__delT = self.__tickTimer.get_time("run")
+        if self.__delT <= 0:
+            self.__delT = self.__loop_delay
+
+        # reset the tick timer to 0, so that we can get the elapsed time in the next loop
+        self.__tickTimer.reset()
+
+        # update the clock -- this is for logging to the csv
         self.__clock.update()
+
+        # get the run time 
         self.__runtime = self.__clock.get_time("run")
+
+        # get the time for logging to the csv
         self.__time = self.__clock.get_time("current")
 
         # read from rc receiver
@@ -91,7 +131,7 @@ class Controller(object):
 
         # update odometry
 
-        self.odometry.update(dt=1.000)
+        self.odometry.update(dt=self.__delT)
 
         #  return {
         #     'temperature' : self.__temperature,
@@ -110,6 +150,7 @@ class Controller(object):
         # read odometry data 
         odometry_data : dict[str, int] = self.odometry.get_data()
         row = [self.__time, receiver_data_dict['angle'], odometry_data['acceleration'][0], odometry_data['acceleration'][1],odometry_data['acceleration'][2],odometry_data['absolute_orientation'][0],odometry_data['absolute_orientation'][1],odometry_data['absolute_orientation'][2],odometry_data['angular_velocity'][0],odometry_data['angular_velocity'][1],odometry_data['angular_velocity'][2],"",""]
+        
         # log data
         self.add_to_csv(self.csv_data_filename, row)
 
@@ -128,11 +169,7 @@ class Controller(object):
             f"{odometry_data['angular_velocity'][2]:.3f}) rad/s"
         )
         
-        self.__tickTimer.update()
-        self.__delT = self.__tickTimer.get_time("run")
-        # reset the timer
-        self.__tickTimer.reset()
-        time.sleep(1.000)
+        time.sleep(self.__loop_delay)
         
 
 
