@@ -41,8 +41,6 @@ class Controller(object):
         self.csv_data_dir.mkdir(parents=True, exist_ok=True)
         self.init_csv(self.csv_data_filename)
 
-        # self.data = {"time":list(), "steering_angle":list(), "imu_data":list()}
-
         self.__battery = Battery()
 
         self.__clock = Clock()
@@ -69,12 +67,12 @@ class Controller(object):
         # Build odometry first because IMU calibration can take a while.
         self.odometry = odometry if odometry is not None else Odometry()
 
-        # Open or flush the receiver only after calibration so startup backlog
-        # from the Nano does not survive into the main control loop.
+        # Start or flush the receiver only after calibration so old Nano data
+        # does not survive into the main control loop.
         self.receiver = receiver if receiver is not None else RCReceiver()
         self.receiver.reset()
 
-        # Start timing only after startup work such as calibration has finished.
+        # Start loop timing only after startup work such as calibration has finished.
         self.__tickTimer.reset()
         self.__clock.reset()
         self.__clock.update()
@@ -104,7 +102,7 @@ class Controller(object):
         # Measure elapsed time since the previous loop for odometry integration.
         self.__tickTimer.update()
 
-        # Get the elapsed time since the previous odometry info (delta time) for odometry integration
+        # This is the elapsed time between the previous and current odometry samples.
         self.__delT = self.__tickTimer.get_time("run")
         if self.__delT <= 0:
             self.__delT = self.__loop_delay
@@ -112,7 +110,7 @@ class Controller(object):
         # reset the tick timer to 0, so that we can get the elapsed time in the next loop
         self.__tickTimer.reset()
 
-        # update the clock -- this is for logging to the csv
+        # Update controller timestamps used for logging and future control logic.
         self.__clock.update()
 
         # get the run time 
