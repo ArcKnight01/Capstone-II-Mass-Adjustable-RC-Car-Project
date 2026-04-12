@@ -13,7 +13,24 @@ import curses
 # }
 led = RGBLED(23,24,25, active_high=True, pwm=True, initial_value=(1,0,0))
 
-def spin_motor(motor:Motor, motor_speed:float, motor_direction:str):
+def spin_motor(motor: Motor, motor_speed: float, motor_direction: str) -> None:
+    """
+    Drive a motor at the requested speed and direction.
+
+    Parameters
+    ----------
+    motor : Motor
+        Motor instance to control.
+    motor_speed : float
+        Motor speed as a percentage in the range ``-100`` to ``100``.
+    motor_direction : str
+        Requested motor direction such as ``"fwd"`` or ``"rev"``.
+
+    Returns
+    -------
+    None
+        This function commands the motor and updates the status LED.
+    """
     speed = float(motor_speed)
     direction = str(motor_direction)
     if(direction.lower().strip() == 'rev'):
@@ -39,7 +56,19 @@ def spin_motor(motor:Motor, motor_speed:float, motor_direction:str):
         if(motor.is_active == False):
             print("[INFO] Motor Stopped.")
     
-def main():
+def main() -> None:
+    """
+    Run the individual motor test program.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+        This function parses CLI arguments and runs the requested motor test loop.
+    """
     led.on()
     led.color = (0,1,0)
     test_motor = []
