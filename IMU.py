@@ -79,17 +79,16 @@ def quaternion_to_euler_angle(w, x, y, z):
 
     return X, Y, Z
 
-
+# The default I2C address
 DEFAULT_I2C_ADDR = 40
-ALT_I2C_ADDR = 41
 
+# The alternate I2C address 
+ALT_I2C_ADDR = 41
 
 # How often to update the BNO sensor data (in hertz).
 BNO_UPDATE_FREQUENCY_HZ = 10
 
-
-
-
+# The BNO055 Mode, deprecated possibly.
 class Mode:
     CONFIG_MODE = 0x00
     ACCONLY_MODE = 0x01
@@ -185,6 +184,7 @@ class IMU(object):
         print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}")
     
     def calibrate_magnetometer(self):
+        print("Magnetometer: Move sensor away from magnetic interference or shields. Perform the figure-eight until calibrated.")
         while not self.__sensor.calibration_status[3] == 3:
             # Calibration Dance Step One: Magnetometer
             #   Move sensor away from magnetic interference or shields
@@ -197,6 +197,14 @@ class IMU(object):
 
     def calibrate_accelerometer(self):
         print("Accelerometer: Perform the six-step calibration dance.")
+        print("Place sensor board into six stable positions for a few seconds each:")
+        print("1) x-axis right, y-axis up,    z-axis away")
+        print("2) x-axis up,    y-axis left,  z-axis away")
+        print("3) x-axis left,  y-axis down,  z-axis away")
+        print("4) x-axis down,  y-axis right, z-axis away")
+        print("5) x-axis left,  y-axis right, z-axis up")
+        print("6) x-axis right, y-axis left,  z-axis down")
+        print("Repeat the steps until calibrated")
         while not self.__sensor.calibration_status[2] == 3:
             # Calibration Dance Step Two: Accelerometer
             #   Place sensor board into six stable positions for a few seconds each:
@@ -216,6 +224,7 @@ class IMU(object):
 
     def calibrate_gyro(self):
         print("Gyroscope: Perform the hold-in-place calibration dance.")
+        print("Place sensor in any stable position for a few seconds\n(Accelerometer calibration may also calibrate the gyro)")
         while not self.__sensor.calibration_status[1] == 3:
             # Calibration Dance Step Three: Gyroscope
             #  Place sensor in any stable position for a few seconds
@@ -257,5 +266,7 @@ class IMU(object):
     def get_raw_magnetometer(self):
         return self.__sensor.magnetic
 
+    def test(self):
+        self.__sensor.
 if __name__ == "__main__":
     pass

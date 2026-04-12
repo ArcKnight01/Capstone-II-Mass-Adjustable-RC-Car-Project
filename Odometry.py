@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 
 try:
-    robotSupported = os.uname().nodename == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = os.uname().nodename == ('terminatorpi' or 'robotpi' or 'carpi')
 except:
     import platform
-    robotSupported = platform.uname().node == 'terminatorpi' or 'robotpi' or 'carpi'
+    robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
 if robotSupported:
     import board
     import busio
@@ -40,9 +40,9 @@ class Odometry(object):
         print(f"IMU Calibration Status: {imu.calibrated}")
 
         #Determine whether to print data to terminal
-        self.__verbose = verbose
+        self.__verbose : bool = verbose
         #Set whether odometry is enabled
-        self.__enabled = enabled
+        self.__enabled : bool = enabled
         
         self.__acceleration : tuple = (0,0,0)
         self.__velocity : tuple = (0,0,0)
@@ -57,6 +57,9 @@ class Odometry(object):
         self.__absolute_orientation : tuple = self.__initial_orientation
         self.__relative_orientation : tuple = (0,0,0)
         time.sleep(1)
+
+    def calibrate(self):
+        pass
 
     def get_data(self) -> dict[str,tuple]: 
         """ 
@@ -123,5 +126,5 @@ if __name__ == "__main__":
         dt = 1
         odometry.update(dt=dt)
         data = odometry.get_data()
-        print(f"Acceleration: {data["acceleration"]}, Orientation: {data["absolute_orientation"]}")
+       
         time.sleep(dt)

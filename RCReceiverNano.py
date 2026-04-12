@@ -2,7 +2,7 @@ import serial
 import sys
 
 def checkthesum(msg :str):
-    """Your exact checksum logic from the backseat driver."""
+    """checksum logic"""
     try:
         fields = msg.strip().split('*')
         cmd = fields[0][1:]  # strip leading $
@@ -13,7 +13,7 @@ def checkthesum(msg :str):
         return False
 
 def nmea_checksum(cmd :str) -> int:
-    """XOR all bytes -- equivalent to BluefinMessages.checksum()"""
+    """XOR all bytes """
     checksum = 0
     for c in cmd:
         checksum ^= ord(c)
@@ -52,7 +52,6 @@ class RCReceiver(object):
         if line.startswith('$STEER'):
             result = parse_steer(line)
             if result:
-                # print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
                 return result
         return None
     
@@ -70,17 +69,12 @@ if __name__ == "__main__":
         print(f"test_points={sys.argv[1:][0]}, verbose={sys.argv[1:][1]}")
         print("args passed!")
         print(sys.argv[1:])
-        # imu = Odometry(test_points=int(sys.argv[1]), verbose=(True if str(sys.argv[2])=='True' else False))
     else:
         print("no args passed!")
-        # imu = Odometry(test_points=10, verbose=False)
+       
     rc_receiver = RCReceiver()
 
     while(True):
-        # imu.update()
-        # imu.add_to_csv()
-        # t, raw, accel, vel, pos, rpy = imu.get_data()
-        # print(imu.get_data())
-        # print(f"Raw:{(round(raw[1:][0],2), round(raw[1:][1],2))}|Accel:{(round(accel[1:][0],2),}|Vel:{vel}|Pos:{pos}|Rpy:{rpy}")
-        rc_receiver.get_data()
+        result = rc_receiver.get_data()
+        print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
         pass

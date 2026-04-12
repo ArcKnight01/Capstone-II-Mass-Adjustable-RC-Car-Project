@@ -38,7 +38,6 @@ def spin_motor(motor:Motor, motor_speed:float, motor_direction:str):
         motor.stop()
         if(motor.is_active == False):
             print("[INFO] Motor Stopped.")
-
     
 def main():
     led.on()
@@ -67,12 +66,6 @@ def main():
                 spin_motor(left_motor_back, left_speed, left_motor_dir)
                 spin_motor(right_motor_front, right_speed, right_motor_dir)
                 spin_motor(right_motor_back, right_speed, right_motor_dir)
-            
-        
-        
-                
-            
-
 
 if __name__ == "__main__":
     # curses.wrapper(main)

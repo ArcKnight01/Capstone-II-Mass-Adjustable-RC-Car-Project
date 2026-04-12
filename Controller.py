@@ -17,6 +17,7 @@ import pathlib
 from Odometry import *
 from RCReceiverNano import RCReceiver
 from RobotClock import Clock
+from Power import Battery
 
 class Controller(object):
     def __init__(self,
@@ -37,7 +38,7 @@ class Controller(object):
         self.init_csv(self.csv_data_filename)
 
         self.data = {"time":list(), "steering_angle":list(), "imu_data":list()}
-        
+        self.__battery = Battery()
         self.__clock = Clock()
         self.__tickTimer = Clock()
         self.__tickTimer.reset()
@@ -54,14 +55,22 @@ class Controller(object):
         print("Initialized Controller")
         pass
     
+    # calibrate the odometry system
+    def calibrate():
+        # TODO this is a stub, should we keep the calibration in the init function of this class?
+        pass
     
     def run(self):
         while True: 
             self.update()
 
     def update(self):
+        # update the battery
+        self.__battery.update()
+        
         # get the time
         self.__tickTimer.update()
+
         self.__delT = self.__tickTimer.get_time("run")
         self.__clock.update()
         self.__runtime = self.__clock.get_time("run")
