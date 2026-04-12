@@ -196,28 +196,14 @@ class Controller(object):
         # read odometry data 
         odometry_data: dict[str, object] = self.odometry.get_data()
         row = self.build_log_row(receiver_data_dict, odometry_data)
-        battery_percent = self.safe_battery_value(self.__battery.retrieve_percentage())
-        battery_display = f"{battery_percent}%" if battery_percent != '' else 'n/a'
         
         # log data
         self.add_to_csv(self.csv_data_filename, row)
 
         # print data
-        print(
-            f"t={self.__time:.3f} | "
-            f"pulse={receiver_data_dict['pulse_width']} us | "
-            f"steer={receiver_data_dict['angle']} deg | "
-            f"battery={battery_display} | "
-            f"a=({odometry_data['acceleration'][0]:.3f}, "
-            f"{odometry_data['acceleration'][1]:.3f}, "
-            f"{odometry_data['acceleration'][2]:.3f}) m/s^2 | "
-            f"rpy=({odometry_data['absolute_orientation'][0]:.3f}, "
-            f"{odometry_data['absolute_orientation'][1]:.3f}, "
-            f"{odometry_data['absolute_orientation'][2]:.3f}) deg | "
-            f"w=({odometry_data['angular_velocity'][0]:.3f}, "
-            f"{odometry_data['angular_velocity'][1]:.3f}, "
-            f"{odometry_data['angular_velocity'][2]:.3f}) rad/s"
-        )
+        print(" | ".join(
+            f"{header}={value}" for header, value in zip(self.CSV_HEADERS, row)
+        ))
         
         time.sleep(self.__loop_delay)
         
