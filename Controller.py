@@ -266,13 +266,18 @@ class Controller:
         self.__runtime = self.__clock.get_time("run")
         self.__time = self.__clock.get_time("current")
         self.__loop_delay = loop_delay
+        self.__enabled = enabled
 
         # Build odometry first (IMU calibration happens inside).
         self.odometry = odometry if odometry is not None else Odometry()
 
         # Start receiver after calibration so stale Nano data is discarded.
-        self.receiver = receiver if receiver is not None else RCReceiver()
-        self.receiver.reset()
+        # RCReceiver opens a serial port immediately; skip on non-robot platforms.
+        if self.__enabled:
+            self.receiver = receiver if receiver is not None else RCReceiver()
+            self.receiver.reset()
+        else:
+            self.receiver = None
 
         # Reset timers after startup / calibration.
         self.__tickTimer.reset()
@@ -365,12 +370,11 @@ class Controller:
         self.__time = self.__clock.get_time("current")
 
         # Read steering.
-        receiver_data_dict: dict = self.receiver.get_data() or {
-            'pulse_width': 0,
-            'angle': 0,
-            'sample_age_sec': '',
-            'is_fresh': False,
-        }
+        _stub: dict = {'pulse_width': 0, 'angle': 0, 'sample_age_sec': '', 'is_fresh': False}
+        receiver_data_dict: dict = (
+            (self.receiver.get_data() or _stub) if self.__enabled and self.receiver is not None
+            else _stub
+        )
         steering_angle_deg = float(receiver_data_dict.get('angle', 0))
 
         # Odometry always runs — provides IMU data for EKF and CSV baseline.
