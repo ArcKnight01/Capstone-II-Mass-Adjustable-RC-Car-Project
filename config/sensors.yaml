@@ -1,0 +1,82 @@
+imu:
+  model: BNO055
+  interface: i2c
+  use_alternate_i2c_address: false
+  nominal_update_rate_hz: 100
+  controller_update_rate_hz: 10
+  orientation_output: euler_and_quaternion
+  measured_channels:
+    - roll
+    - pitch
+    - yaw
+    - quaternion
+    - linear_acceleration
+    - gravity
+    - raw_gyro
+    - magnetometer
+    - temperature
+  axis_alignment:
+    x_axis: forward
+    y_axis: left
+    z_axis: up
+  noise:
+    linear_accel_sigma_mps2: 0.012
+    yaw_rate_sigma_radps: 0.0014
+    yaw_sigma_rad: 0.026
+  calibration:
+    enable_post_calibration: true
+    post_calibration_sample_count: 128
+    post_calibration_sample_period_sec: 0.02
+    post_calibrate_gravity: true
+
+gps:
+  model: MTK3339
+  interface: gpsd
+  host: 127.0.0.1
+  port: "2947"
+  nominal_update_rate_hz: 1
+  max_update_rate_hz: 10
+  measured_channels:
+    - latitude
+    - longitude
+    - speed_m_s
+    - track_deg
+    - epx_m
+    - epy_m
+    - eps_m_s
+  noise:
+    position_sigma_m: 2.5
+    velocity_sigma_mps: 0.05
+
+rc_receiver:
+  transport: serial
+  serial_port: /dev/ttyUSB0
+  baudrate: 115200
+  nominal_update_rate_hz: 50
+  read_timeout_sec: 0.02
+  stale_timeout_sec: 0.25
+  mapped_angle_units: deg
+  mapped_angle_min_deg: -60.0
+  mapped_angle_max_deg: 60.0
+  measured_channels:
+    - pulse_width
+    - steering_angle
+    - sample_age_sec
+    - is_fresh
+  interpretation_notes:
+    - logged steering angle is assumed to be a command-side steering quantity
+    - commanded steering may differ from actual road-wheel angle under load
+  noise:
+    steering_sigma_rad: 0.0087
+
+future_sensors:
+  esc_or_throttle_feedback:
+    available: false
+    usefulness:
+      - improves longitudinal force modeling
+      - helps connect the dynamics model to the EKF predict step
+  wheel_speed:
+    available: false
+    usefulness:
+      - improves longitudinal slip estimation
+      - improves speed estimation when GPS is poor

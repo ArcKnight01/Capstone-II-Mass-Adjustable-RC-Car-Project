@@ -1,0 +1,50 @@
+body_frame:
+  x_axis: forward
+  y_axis: left
+  z_axis: up
+
+world_frame:
+  type: local_enu
+  x_axis: east
+  y_axis: north
+  z_axis: up
+
+heading_convention:
+  yaw_units: rad
+  positive_rotation: counter_clockwise
+  zero_direction_world: east
+
+steering_convention:
+  selected_sign: negative-left
+  supported_signs:
+    - negative-left
+    - positive-left
+  mapped_angle_units: deg
+  mapped_angle_range_deg:
+    min: -60.0
+    max: 60.0
+  notes:
+    - positive planar math rotation in the body XY plane means left
+    - the logged steering mapping is still under verification
+
+sensor_mounting:
+  imu:
+    aligned_with_body_axes: true
+    axis_alignment:
+      x_axis: forward
+      y_axis: left
+      z_axis: up
+    offset_from_cg_body_m:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    notes:
+      - update this once the IMU location relative to the CG is measured
+  gps:
+    aligned_with_body_axes: true
+    antenna_offset_from_cg_body_m:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    notes:
+      - update once the GPS antenna position relative to the CG is measured

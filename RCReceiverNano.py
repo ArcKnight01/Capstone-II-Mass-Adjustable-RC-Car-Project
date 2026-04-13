@@ -2,6 +2,9 @@ import serial
 import sys
 import time
 
+DEFAULT_READ_TIMEOUT_SEC = 0.02
+DEFAULT_STALE_TIMEOUT_SEC = 0.25
+
 def checkthesum(msg: str) -> bool:
     """
     Validate the checksum of an NMEA-style message.
@@ -78,7 +81,9 @@ class RCReceiver(object):
     def __init__(self,
                  baudrate : int = 115200,
                  port : str = '/dev/ttyUSB0', 
-                 verbose : bool = False
+                 verbose : bool = False,
+                 read_timeout_sec : float = DEFAULT_READ_TIMEOUT_SEC,
+                 stale_timeout_sec : float = DEFAULT_STALE_TIMEOUT_SEC,
                  ):
         """
         Initialize the RC receiver serial interface.
@@ -91,6 +96,10 @@ class RCReceiver(object):
             Serial device path.
         verbose : bool, optional
             Whether verbose output should be enabled.
+        read_timeout_sec : float, optional
+            Maximum time to wait for a serial line fragment before returning.
+        stale_timeout_sec : float, optional
+            Age threshold after which the cached steering sample is marked stale.
 
         Returns
         -------
@@ -100,7 +109,74 @@ class RCReceiver(object):
         self.__set_baudrate = baudrate
         self.__port = port
         self.__verbose = verbose
-        self.__serial = serial.Serial(port, baudrate, timeout=1)
+        self.__read_timeout_sec = max(0.0, float(read_timeout_sec))
+        self.__stale_timeout_sec = max(0.0, float(stale_timeout_sec))
+        self.__serial = serial.Serial(port, baudrate, timeout=self.__read_timeout_sec)
+        self.__last_sample: dict[str, int | float | bool] | None = None
+
+    def __cache_result(
+        self,
+        result: dict[str, int],
+        received_monotonic_time: float | None = None,
+    ) -> dict[str, int | float | bool]:
+        """
+        Store the latest parsed steering sample with a monotonic timestamp.
+
+        Parameters
+        ----------
+        result : dict[str, int]
+            Parsed steering sample containing pulse width and angle.
+        received_monotonic_time : float | None, optional
+            Time at which the sample was received. If ``None``, the current
+            monotonic clock value is used.
+
+        Returns
+        -------
+        dict[str, int | float | bool]
+            Cached steering sample enriched with age and freshness metadata.
+        """
+        sample_time = time.monotonic() if received_monotonic_time is None else float(received_monotonic_time)
+        self.__last_sample = {
+            'pulse_width': int(result['pulse_width']),
+            'angle': int(result['angle']),
+            'sample_time_monotonic': sample_time,
+        }
+        return self.__format_sample(self.__last_sample, now_monotonic=sample_time)
+
+    def __format_sample(
+        self,
+        sample: dict[str, int | float | bool] | None,
+        now_monotonic: float | None = None,
+    ) -> dict[str, int | float | bool] | None:
+        """
+        Return a steering sample with derived age and freshness flags.
+
+        Parameters
+        ----------
+        sample : dict[str, int | float | bool] | None
+            Cached sample to expose to callers.
+        now_monotonic : float | None, optional
+            Time to use when computing sample age.
+
+        Returns
+        -------
+        dict[str, int | float | bool] | None
+            Steering sample metadata, or ``None`` if no sample is cached.
+        """
+        if sample is None:
+            return None
+
+        current_time = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        sample_time = float(sample['sample_time_monotonic'])
+        age_sec = max(0.0, current_time - sample_time)
+
+        return {
+            'pulse_width': int(sample['pulse_width']),
+            'angle': int(sample['angle']),
+            'sample_time_monotonic': sample_time,
+            'sample_age_sec': age_sec,
+            'is_fresh': age_sec <= self.__stale_timeout_sec,
+        }
 
     def __parse_line(self, line: str) -> dict[str, int] | None:
         """
@@ -120,40 +196,50 @@ class RCReceiver(object):
             return parse_steer(line)
         return None
 
-    def get_data(self, latest: bool = True) -> dict[str, int] | None:
+    def get_data(self, latest: bool = True) -> dict[str, int | float | bool] | None:
         """
-        Read steering data from the receiver.
+        Read steering data from the receiver without stalling the control loop.
 
         Parameters
         ----------
         latest : bool, optional
-            Whether to drain the input buffer and return the most recent valid sample.
+            Whether to drain the input buffer and return the most recent valid
+            sample. When ``True`` and no new line is available, the method
+            returns the latest cached sample immediately.
 
         Returns
         -------
-        dict[str, int] | None
-            Parsed steering data, or ``None`` if no valid message is available.
+        dict[str, int | float | bool] | None
+            Parsed steering data enriched with sample age/freshness metadata, or
+            ``None`` if no valid message has ever been received.
         """
-        if self.__serial.is_open:
-            latest_result = None
+        if not self.__serial.is_open:
+            if self.__verbose:
+                print(f"Serial port at {self.__port} is not open")
+            return self.__format_sample(self.__last_sample)
 
-            if latest:
-                while self.__serial.in_waiting > 0:
-                    line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
-                    result = self.__parse_line(line)
-                    if result is not None:
-                        latest_result = result
+        latest_sample = None
+        latest_sample_time = None
 
-                if latest_result is not None:
-                    return latest_result
+        if latest:
+            while self.__serial.in_waiting > 0:
+                line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
+                result = self.__parse_line(line)
+                if result is not None:
+                    latest_sample = result
+                    latest_sample_time = time.monotonic()
 
+            if latest_sample is not None:
+                return self.__cache_result(latest_sample, latest_sample_time)
+
+            return self.__format_sample(self.__last_sample)
+
+        if self.__serial.in_waiting > 0:
             line = self.__serial.readline().decode('utf-8', errors='ignore').strip()
             result = self.__parse_line(line)
             if result is not None:
-                return result
-        else: 
-            if self.__verbose:
-                print(f"Serial port at {self.__port} is not open")
+                return self.__cache_result(result)
+
         return None
     
     # function to clear the serial monitor, such as for calibration time
@@ -179,6 +265,7 @@ class RCReceiver(object):
 
         # Clear input buffer, discarding all that is in the buffer.
         self.__serial.reset_input_buffer()
+        self.__last_sample = None
 
         if self.__verbose:
             print(f"Cleared {queued_bytes} incoming bytes from the serial queue")

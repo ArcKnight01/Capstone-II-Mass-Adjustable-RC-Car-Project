@@ -1,0 +1,114 @@
+ekf:
+  enabled: true
+  model_type: dynamic_single_track
+  steering_sign_convention: negative-left
+  low_speed_velocity_update_threshold_mps: 0.2
+  reference_models:
+    - https://github.com/Janudis/Extended-Kalman-Filter-GPS_IMU
+    - https://www.mathworks.com/help/ident/ug/modeling-a-vehicle-dynamics-system.html
+  integration_goal:
+    - combine the sensor model and the dynamics model inside one EKF pipeline
+
+initial_covariance:
+  position_sigma_m: 10.0
+  yaw_sigma_rad: 0.5235987756
+  velocity_sigma_mps: 2.0
+  yaw_rate_sigma_radps: 0.3490658504
+  accel_bias_sigma_mps2: 1.0
+  gyro_bias_sigma_radps: 0.0872664626
+
+process_noise:
+  model_velocity_sigma_mps2: 1.5
+  model_yaw_accel_sigma_radps2: 2.0
+  accel_bias_walk_sigma_mps3: 0.05
+  gyro_bias_walk_sigma_radps2: 0.01
+  notes:
+    - tune using logged runs after vehicle parameters are updated
+    - these are currently engineering guesses rather than identified values
+
+measurement_noise:
+  gps_position_sigma_m: 2.5
+  gps_velocity_sigma_mps: 0.05
+  imu_yaw_sigma_rad: 0.026
+  imu_yaw_rate_sigma_radps: 0.0014
+  steering_sigma_rad: 0.0087
+
+updates:
+  use_gps_position: true
+  use_gps_velocity: true
+  use_imu_yaw: true
+  use_imu_yaw_rate: true
+  use_steering_as_predict_input: true
+  use_roll_pitch_for_load_transfer_only: true
+
+future_inputs:
+  use_steering_in_predict: true
+  use_throttle_if_available: false
+  use_wheel_speed_if_available: false
+  use_brake_if_available: false
+
+state_definition:
+  current_runtime_state:
+    - p_e_m
+    - p_n_m
+    - yaw_rad
+    - v_x_body_mps
+    - v_y_body_mps
+    - yaw_rate_radps
+    - accel_bias_x_mps2
+    - gyro_bias_z_radps
+  planned_dynamics_augmented_state:
+    - p_e_m
+    - p_n_m
+    - yaw_rad
+    - v_x_body_mps
+    - v_y_body_mps
+    - yaw_rate_radps
+    - roll_rad
+    - pitch_rad
+    - accel_bias_x_mps2
+    - gyro_bias_z_radps
+  notes:
+    - roll and pitch are planned to enter through the dynamics/load-transfer model first
+    - they may or may not become estimated states depending on observability
+
+measurement_model:
+  gps_position:
+    enabled: true
+    output: [p_e_m, p_n_m]
+  gps_velocity:
+    enabled: true
+    output: [v_e_mps, v_n_mps]
+    gating:
+      minimum_speed_mps: 0.2
+  imu_yaw:
+    enabled: true
+    output: [yaw_rad]
+  imu_yaw_rate:
+    enabled: true
+    output: [yaw_rate_radps_plus_bias]
+  steering:
+    enabled: true
+    role: predict_input
+    notes:
+      - steering is currently more trustworthy as an input than as a direct state measurement
+
+initialization:
+  local_origin_source: first_good_gps_fix
+  initial_yaw_source_priority:
+    - imu_fused_yaw
+    - gps_track
+    - zero
+  initial_velocity_source_priority:
+    - gps_speed_track
+    - zero
+
+gating_and_safeguards:
+  minimum_longitudinal_speed_mps_for_slip_angle_equations: 0.3
+  wrap_yaw_angles: true
+  use_gps_reported_accuracy_when_available: true
+
+provenance:
+  dynamics_model_source: config/dynamics.yaml
+  vehicle_parameter_source: config/vehicle.yaml
+  sensor_parameter_source: config/sensors.yaml

@@ -1,0 +1,20 @@
+# Base Python dependencies used directly by this repository.
+numpy
+pandas
+matplotlib
+imageio
+utm
+pyserial
+psutil
+pynmea2
+PyYAML
+
+# Raspberry Pi / hardware-facing dependencies.
+# These are only needed when running on the robot or other Linux hardware.
+gpiozero; platform_system == "Linux"
+adafruit-blinka; platform_system == "Linux"
+adafruit-circuitpython-bno055; platform_system == "Linux"
+
+# GPS_System.py depends on the `gps` Python module from gpsd.
+# Install that from the OS package manager alongside gpsd, for example:
+#   sudo apt install gpsd gpsd-clients python3-gps

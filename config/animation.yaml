@@ -1,0 +1,20 @@
+animation:
+  default_csv_name: data.csv
+  interval_ms: 80
+  trail_length: 250
+  steering_sign_convention: negative-left
+  show_ekf_outputs_when_available: true
+  show_dynamics_outputs_when_available: true
+
+display:
+  show_steering_vector: true
+  steering_vector_color: orange
+  body_axis_colors:
+    x_axis: red
+    y_axis: green
+    z_axis: blue
+  planned_overlays:
+    - ekf_heading
+    - front_slip_angle
+    - rear_slip_angle
+    - handling_balance_indicator

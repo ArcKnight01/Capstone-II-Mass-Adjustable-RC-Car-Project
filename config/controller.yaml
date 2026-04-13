@@ -1,0 +1,36 @@
+controller:
+  enabled: true
+  verbose: true
+  loop_rate_hz: 10
+  loop_delay_sec: 0.1
+  references:
+    - config/sensors.yaml
+    - config/ekf.yaml
+    - config/dynamics.yaml
+
+logging:
+  enabled: true
+  directory: data
+  filename_stem: data
+  planned_additional_columns:
+    - ekf_position_east_m
+    - ekf_position_north_m
+    - ekf_yaw_rad
+    - ekf_vx_body_mps
+    - ekf_vy_body_mps
+    - ekf_yaw_rate_radps
+    - dynamics_front_slip_angle_rad
+    - dynamics_rear_slip_angle_rad
+    - dynamics_lateral_load_transfer_n
+    - dynamics_longitudinal_load_transfer_n
+
+startup:
+  calibrate_imu_on_startup: true
+  reset_receiver_on_startup: true
+  initialize_ekf_from_first_good_gps_fix: true
+
+runtime:
+  use_default_receiver_if_missing: true
+  use_default_odometry_if_missing: true
+  enable_ekf: true
+  enable_dynamics_model: true

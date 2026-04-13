@@ -1,0 +1,89 @@
+dynamics:
+  enabled: true
+  model_family: dynamic_single_track
+  reference_models:
+    - https://www.mathworks.com/help/ident/ug/modeling-a-vehicle-dynamics-system.html
+  supporting_references:
+    - c:/Users/arcar/Downloads/RC_vehicle_dynamics_tables_summary.md
+    - c:/Users/arcar/Downloads/RC_vehicle_dynamics_tables.xlsx
+    - c:/Users/arcar/Downloads/Equations.xlsx
+  integration_plan:
+    - use the dynamics model to predict vehicle response from steering and longitudinal excitation
+    - use sensor fusion in the EKF to correct drift and unmodeled disturbances
+
+state_vector:
+  states:
+    - p_e_m
+    - p_n_m
+    - yaw_rad
+    - v_x_body_mps
+    - v_y_body_mps
+    - yaw_rate_radps
+    - roll_rad
+    - pitch_rad
+  notes:
+    - roll and pitch are measured first, then later upgraded to dynamic states if needed
+
+inputs:
+  required_now:
+    - steering_angle_rad
+    - imu_longitudinal_accel_mps2
+    - imu_lateral_accel_mps2
+    - imu_yaw_rate_radps
+    - fused_speed_or_gps_speed
+    - fused_yaw_or_imu_yaw
+  optional_later:
+    - throttle_command
+    - brake_command
+    - motor_torque_estimate_nm
+    - wheel_speed
+    - wheel_slip
+
+derived_quantities:
+  compute:
+    - speed
+    - longitudinal_acceleration
+    - lateral_acceleration
+    - front_slip_angle
+    - rear_slip_angle
+    - longitudinal_load_transfer
+    - lateral_load_transfer
+    - understeer_indicator
+    - oversteer_indicator
+    - understeer_gradient
+    - ackermann_steering_angle
+    - optimal_steering_angle
+
+equations:
+  load_transfer:
+    longitudinal: delta_W_x = W * (A_x * h / l)
+    lateral: delta_W_y = W * (A_y * h / t)
+  handling:
+    understeer_gradient: UG = d(delta) / d(A_y)
+    ackermann_small_angle: delta_ack ~= l / R
+    ackermann_exact: delta_ack = atan(l / R)
+  slip_angles:
+    front_small_angle: alpha_f ~= delta - (v_y + a*r)/v_x
+    rear_small_angle: alpha_r ~= -(v_y - b*r)/v_x
+
+handling_logic:
+  understeer_condition:
+    heuristic: abs(alpha_f) > abs(alpha_r)
+  oversteer_condition:
+    heuristic: abs(alpha_r) > abs(alpha_f)
+  notes:
+    - start with heuristics before adding a more formal understeer-gradient estimator
+
+validation:
+  checks:
+    - verify steering sign convention
+    - verify yaw sign convention
+    - compare predicted yaw rate against IMU gyro z
+    - compare predicted lateral acceleration against IMU lateral acceleration
+    - compare predicted turn curvature against GPS track curvature
+
+missing_information:
+  - yaw inertia estimate for the active configuration
+  - cornering stiffness estimates for the active tire and surface combination
+  - confirmation of true road-wheel steering angle vs servo command angle
+  - whether throttle and brake commands can be logged separately

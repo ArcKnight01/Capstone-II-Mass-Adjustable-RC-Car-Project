@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\arcar\\anaconda3\\envs\\bwsi\\python.exe",
+  "python.condaPath": "C:\\Users\\arcar\\anaconda3\\Scripts\\conda.exe",
+  "terminal.integrated.automationProfile.windows": {
+    "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "args": [
+      "-NoLogo",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      ". 'C:\\Users\\arcar\\anaconda3\\shell\\condabin\\conda-hook.ps1'; conda activate bwsi"
+    ]
+  }
+}

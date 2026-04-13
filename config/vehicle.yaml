@@ -1,0 +1,146 @@
+vehicle:
+  name: Traxxas Rustler 4x4
+  platform: rc_car
+  provenance:
+    primary_reference: c:/Users/arcar/Downloads/RC_vehicle_dynamics_tables_summary.md
+    supporting_references:
+      - c:/Users/arcar/Downloads/RC_vehicle_dynamics_tables.xlsx
+      - c:/Users/arcar/Downloads/Equations.xlsx
+      - https://www.mathworks.com/help/ident/ug/modeling-a-vehicle-dynamics-system.html
+
+geometry:
+  wheelbase_m:
+    value: 0.3048
+    source: horizontal_cg_sheet
+    source_value: 12.0 in
+  track_width_m:
+    value: 0.3048
+    source: lateral_load_transfer_sheet
+    source_value: 12.0 in
+    confidence: low
+  front_cg_distance_m:
+    value: 0.159512
+    source: horizontal_cg_sheet
+    source_value: 6.28 in
+  rear_cg_distance_m:
+    value: 0.140208
+    source: horizontal_cg_sheet
+    source_value: 5.52 in
+  cg_location_component_model_m:
+    x: 0.244019
+    y: 0.019316
+    z: 0.044618
+    source: component_cg_sheet
+    source_value:
+      x_in: 9.607058
+      y_in: 0.760456
+      z_in: 1.756587
+  cg_height_experimental_m:
+    value: 0.066309
+    source: horizontal_angular_cg_sheet
+    source_value: 2.610606 in
+  cg_adjustable_range_m:
+    longitudinal:
+      min: 0.139776
+      max: 0.348259
+    lateral:
+      min: 0.015443
+      max: 0.023190
+    vertical:
+      min: 0.040132
+      max: 0.049073
+    source: summary_markdown
+
+mass_properties:
+  baseline_mass_kg:
+    value: 2.104
+    source: component_cg_sheet
+    source_value: 2104 g
+  alternate_configuration_mass_kg:
+    value: 2.667
+    source: horizontal_cg_sheet
+    source_value: 2667 g
+  selected_mass_kg:
+    value: 2.667
+    source: selected_as_run_placeholder
+    notes:
+      - verify which worksheet corresponds to the current as-run vehicle configuration
+  static_load_distribution:
+    front_axle_load_kg: 1.229
+    rear_axle_load_kg: 1.438
+    front_fraction: 0.4608
+    rear_fraction: 0.5392
+    source: horizontal_cg_sheet
+    source_value:
+      front_g: 1229
+      rear_g: 1438
+  yaw_inertia_kgm2:
+    value: 0.6
+    source: placeholder
+    confidence: low
+
+tire_model:
+  active_configuration:
+    front_tire_type: S3 Soft Tires
+    rear_tire_type: MC Hard Tires
+    notes:
+      - mixed front/rear compounds can materially affect understeer and oversteer balance
+      - confirm whether this matches the current as-run vehicle setup
+  axle_level_defaults:
+    front_cornering_stiffness_nprad:
+      value: 60.0
+      source: user_provided_tire_table
+      confidence: medium
+    rear_cornering_stiffness_nprad:
+      value: 35.0
+      source: user_provided_tire_table
+      confidence: medium
+  observed_tire_sets:
+    - Off Road Tires
+    - MC Hard Tires
+    - S3 Soft Tires
+  tire_catalog:
+    S3 Soft Tires:
+      quantity: 2
+      role: likely_high_grip_compound
+      friction_coefficient_mu: 1.2
+      cornering_stiffness_nprad: 60.0
+      load_exponent_n: 0.15
+      radius_m: 0.0356
+      rolling_resistance_coefficient: 0.02
+    MC Hard Tires:
+      quantity: 2
+      role: likely_low_grip_compound
+      friction_coefficient_mu: 0.8
+      cornering_stiffness_nprad: 35.0
+      load_exponent_n: 0.15
+      radius_m: 0.0356
+      rolling_resistance_coefficient: 0.02
+  notes:
+    - tire stiffness and friction should eventually be tied to the active front/rear tire selection
+    - if all four corners use the same compound, update active_configuration accordingly
+    - if front and rear compounds differ, handling balance should be expected to shift
+
+longitudinal_model:
+  drag_coefficient_longitudinal:
+    value: 0.0
+    source: placeholder
+  min_longitudinal_speed_mps:
+    value: 0.3
+    source: estimator_numerical_safeguard
+  rolling_resistance_reference:
+    use_tire_catalog_crr: true
+
+actuation:
+  steering_angle_min_deg: -60.0
+  steering_angle_max_deg: 60.0
+  throttle_signal_available: false
+  esc_feedback_available: false
+  brake_signal_available: false
+  motor_torque_model_available: false
+
+notes:
+  - worksheet-derived geometry and mass values are more trustworthy than the original placeholders
+  - track width should be confirmed directly on the current vehicle
+  - selected_mass_kg should be updated once the active hardware configuration is known
+  - tire properties came from the user-provided tire table and are helpful for both the dynamics model and EKF process tuning
