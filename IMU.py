@@ -354,7 +354,7 @@ class IMU(object):
         self.__last_raw_magnetometer    : tuple            = (0.0, 0.0, 0.0)
 
         if self.__sensor is not None:
-            print(f"BNO055 IMU initialized with ACCEL RANGE: {self.__sensor.accel_mode}G, GYRO RANGE: {self.__sensor.gyro_mode}deg/s, and MAG RANGE: {self.__sensor.mag_mode}uT")
+            print(f"BNO055 IMU initialized with ACCEL RANGE: {self.__sensor.accel_mode}G, GYRO RANGE: {self.__sensor.gyro_mode}deg/s, and MAG RANGE: {self.__sensor.magnet_mode}uT")
 
     def _safe_sensor_read(self, read_fn, fallback, *, context: str):
         """
@@ -1263,7 +1263,7 @@ if __name__ == "__main__":
             print(f"Raw Accel (m/s^2):    {raw_acceleration}")
             print(f"Raw Gyro (deg/s):     {raw_gyro}")
             print(f"Raw Magnet (uT):      {raw_magnetometer}")
-            print(f"Calibration Status:   {calibration_status}")
+            print(f"Calibration Status(sys, gyro, accel, mag):   {calibration_status}")
             print(f"Is Calibrated:        {calibrated}")
 
             time.sleep(update_period_sec)
