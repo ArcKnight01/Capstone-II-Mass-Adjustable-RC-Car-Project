@@ -5,7 +5,8 @@ This file provides Mermaid diagrams for the current repository EKF flow. It comp
 ## High-Level EKF Flow
 
 ```mermaid
-flowchart TD
+%%{init: {'flowchart': {'curve': 'step'}}}%%
+flowchart LR
     A[Load config bundle] --> B[Build DynamicsModel]
     B --> C[Build ExtendedKalmanFilter]
     C --> D[Wait for first good GPS fix]
@@ -42,6 +43,7 @@ flowchart TD
 ## Process Model Versus Measurement Model
 
 ```mermaid
+%%{init: {'flowchart': {'curve': 'step'}}}%%
 flowchart LR
     A["Current state x_k-1^+"] --> B["Dynamics model f(x,u)"]
     U["Input u_k"] --> B
