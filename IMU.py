@@ -233,6 +233,24 @@ class IMU(object):
         return tuple(np.asarray(vector, dtype=float).tolist())
 
     @staticmethod
+    def _is_valid_quaternion(
+        quaternion: tuple[float, float, float, float] | list[float] | np.ndarray | None
+    ) -> bool:
+        """Return whether a quaternion is finite, shape-correct, and non-zero."""
+        if quaternion is None:
+            return False
+
+        try:
+            quaternion_array = np.asarray(quaternion, dtype=float)
+        except (TypeError, ValueError):
+            return False
+
+        if quaternion_array.shape != (4,) or not np.all(np.isfinite(quaternion_array)):
+            return False
+
+        return float(np.linalg.norm(quaternion_array)) > 0.0
+
+    @staticmethod
     def _midrange_offset(samples: list[np.ndarray]) -> np.ndarray:
         """
         Estimate a vector offset using the legacy midpoint-of-range method.
@@ -633,11 +651,12 @@ class IMU(object):
             self.__last_quaternion,
             context="quaternion",
         )
-        if quaternion is None:
+        if not self._is_valid_quaternion(quaternion):
             return self.__last_quaternion
 
-        self.__last_quaternion = quaternion
-        return quaternion
+        quaternion_tuple = tuple(np.asarray(quaternion, dtype=float).tolist())
+        self.__last_quaternion = quaternion_tuple
+        return quaternion_tuple
     
     def get_euler_angles(self) -> tuple[float, float, float]:
         """
@@ -678,7 +697,14 @@ class IMU(object):
         """
         # TODO calculate 3x3 rotation matrix from quaternion
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-        return quaternion_rotation_matrix(self.get_quaternion())
+        quaternion = self.get_quaternion()
+        if not self._is_valid_quaternion(quaternion):
+            return np.eye(3, dtype=float)
+
+        try:
+            return quaternion_rotation_matrix(quaternion)
+        except ValueError:
+            return np.eye(3, dtype=float)
     
     def get_linear_acceleration(self) -> tuple[float, float, float]:
         """
