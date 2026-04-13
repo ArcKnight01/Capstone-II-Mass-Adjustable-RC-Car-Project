@@ -222,7 +222,8 @@ class Controller:
         verbose : bool
             Enable console output.
         enabled : bool
-            Master enable flag (reserved for future use).
+            Master enable flag.  When ``False``, hardware peripherals
+            (RCReceiver) are not initialised and telemetry is not printed.
         log_to_csv : bool
             Write telemetry to CSV on each update.
         csv_data_dir_name : str
@@ -267,7 +268,8 @@ class Controller:
         self.__time = self.__clock.get_time("current")
         self.__loop_delay = loop_delay
         self.__enabled = enabled
-
+        self.__verbose = verbose
+        self.__log_to_csv = log_to_csv
         # Build odometry first (IMU calibration happens inside).
         self.odometry = odometry if odometry is not None else Odometry()
 
@@ -319,8 +321,9 @@ class Controller:
                         print(f"WARNING: EKF construction failed ({exc}). Falling back to ODOMETRY_ONLY.")
                         self._navigation_mode = NavigationMode.ODOMETRY_ONLY
 
-        print(f"Initialized Controller | navigation_mode={self._navigation_mode}")
-        print(f"  EKF available: {self._ekf is not None}")
+        if self.__verbose:
+            print(f"Initialized Controller | navigation_mode={self._navigation_mode}")
+            print(f"  EKF available: {self._ekf is not None}")
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -386,11 +389,14 @@ class Controller:
             self._run_ekf_step(odometry_data, steering_angle_deg, self.__delT)
 
         row = self.build_log_row(receiver_data_dict, odometry_data)
-        self.add_to_csv(self.csv_data_filename, row)
 
-        print(" | ".join(
-            f"{h}={v}" for h, v in zip(self.CSV_HEADERS, row)
-        ))
+        if self.__log_to_csv:
+            self.add_to_csv(self.csv_data_filename, row)
+
+        if self.__verbose:
+            print(" | ".join(
+                f"{h}={v}" for h, v in zip(self.CSV_HEADERS, row)
+            ))
 
         time.sleep(self.__loop_delay)
 

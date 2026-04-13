@@ -315,11 +315,13 @@ class IMU(object):
             self.__i2c_address = ALT_I2C_ADDR
         else:
             self.__i2c_address = DEFAULT_I2C_ADDR
-        self.__i2c = busio.I2C(board.SCL, board.SDA)
-        self.__sensor = adafruit_bno055.BNO055_I2C(self.__i2c, address=self.__i2c_address)
-        
-        # set the mode:
-        self.__sensor.mode = mode
+        if robotSupported:
+            self.__i2c = busio.I2C(board.SCL, board.SDA)
+            self.__sensor = adafruit_bno055.BNO055_I2C(self.__i2c, address=self.__i2c_address)
+            self.__sensor.mode = mode
+        else:
+            self.__i2c = None
+            self.__sensor = None
         self.__mode = mode
 
         self.__last_val = 0xFFFF
@@ -342,7 +344,8 @@ class IMU(object):
         self.__last_raw_acceleration = (0.0, 0.0, 0.0)
         self.__last_raw_gyro = (0.0, 0.0, 0.0)
         self.__last_raw_magnetometer = (0.0, 0.0, 0.0)
-        print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
+        if self.__sensor is not None:
+            print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
 
     def _safe_sensor_read(self, read_fn, fallback, *, context: str):
         """
@@ -362,6 +365,8 @@ class IMU(object):
         Any
             Fresh sensor data when available, otherwise ``fallback``.
         """
+        if self.__sensor is None:
+            return fallback
         try:
             return read_fn()
         except OSError as exc:
