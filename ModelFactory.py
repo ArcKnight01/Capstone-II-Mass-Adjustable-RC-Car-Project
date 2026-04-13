@@ -1,3 +1,14 @@
+"""
+ModelFactory.py - Build the EKF and dynamics model from YAML configuration.
+
+This module contains dataclasses and factory helpers to instantiate the shared
+frame conventions, controller runtime settings, dynamics model, and EKF from
+repository configuration files.
+
+Usage:
+    python ModelFactory.py
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

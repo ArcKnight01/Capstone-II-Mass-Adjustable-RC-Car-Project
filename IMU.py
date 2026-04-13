@@ -1,3 +1,22 @@
+"""
+IMU.py - Interface to Adafruit BNO055 9-DOF IMU sensor.
+
+This module provides a wrapper around the BNO055 IMU sensor, handling initialization,
+calibration, and data retrieval. It performs interactive calibration on startup and
+provides access to raw sensor vectors, Euler angles, quaternions, and temperature.
+
+Data Flow:
+1. Initialize I2C connection to BNO055 (Pi only) or mock data (Windows)
+2. Perform calibration sequence (gyro, magnetometer, accelerometer)
+3. Provide methods to read: acceleration, gyro, magnetometer, orientation, temperature
+
+Usage:
+    python IMU.py
+    - Runs calibration and prints sensor readings in a loop
+
+Note: Requires hardware on Raspberry Pi; uses mock data on Windows.
+"""
+
 import sys
 import os
 import time
@@ -7,10 +26,10 @@ import numpy as np
 from IMUUtil import *
 
 try:
-    robotSupported = os.uname().nodename == ('terminatorpi' or 'robotpi' or 'carpi')
+    robotSupported = os.uname().nodename in ('terminatorpi', 'robotpi', 'carpi')
 except:
     import platform
-    robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
+    robotSupported = platform.uname().node in ('terminatorpi', 'robotpi', 'carpi')
     
 if robotSupported:
     import board

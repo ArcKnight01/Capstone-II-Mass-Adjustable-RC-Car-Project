@@ -1,3 +1,11 @@
+"""
+RobotClock.py - Simple uptime and runtime clock helper.
+
+This module provides a small clock class that tracks both raw epoch time and
+runtime since the last reset. It is used by the controller for loop timing and
+CSV timestamping.
+"""
+
 import time
 
 class Clock(object):

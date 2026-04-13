@@ -1,3 +1,10 @@
+"""
+MovingAverageFilter.py - Sliding-window moving average filter.
+
+This module implements a simple fixed-window moving average filter for smoothing
+sensor data and other noisy signals.
+"""
+
 class MovingAverageFilter:
     """A simple moving average filter for smoothing data."""
 
@@ -89,3 +96,34 @@ class LowPassFilter:
     @property
     def value(self):
         return self._value
+
+
+class HighPassFilter:
+    """A simple high-pass filter that attenuates low frequencies and passes high frequencies.
+    
+    This is implemented as the complement of a low-pass filter: output = input - low_pass_output
+    This ensures perfect complementarity when used with a LowPassFilter of the same cutoff.
+    """
+    __slots__ = ("cutoff_hz", "_low_pass")
+
+    def __init__(self, cutoff_hz):
+        cutoff_hz = float(cutoff_hz)
+        if cutoff_hz <= 0.0:
+            raise ValueError("cutoff_hz must be positive")
+
+        self.cutoff_hz = cutoff_hz
+        self._low_pass = LowPassFilter(cutoff_hz)
+
+    def update(self, new_value, dt):
+        """Update the high-pass filter with a new value.
+        
+        Returns the high-frequency component (input minus low-frequency component).
+        """
+        value = float(new_value)
+        low_pass_output = self._low_pass.update(value, dt)
+        return value - low_pass_output
+
+    @property
+    def value(self):
+        """Get the current high-pass filtered value."""
+        return self._low_pass.value

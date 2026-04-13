@@ -1,5 +1,12 @@
 
-# This is a stub
+"""
+Robot.py - Placeholder simulated robot class.
+
+This module is currently a stub and is intended to hold a simulated robot
+model for offline testing or hardware-in-loop experiments.
+"""
+
+# TODO This is a stub, not implemented yet
 
 class SimulatedRobot(object):
     """

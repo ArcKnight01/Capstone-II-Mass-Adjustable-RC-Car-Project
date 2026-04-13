@@ -1,8 +1,20 @@
 
-from gpiozero import RGBLED
+"""
+RGB_Indicator.py - Hardware wrapper for an RGB status LED.
+
+This module exposes a small wrapper around the gpiozero RGBLED class for
+Raspberry Pi-based status indication. It is safe to import on non-Pi systems,
+but will disable the LED functionality if gpiozero is unavailable.
+"""
+
+try:
+    from gpiozero import RGBLED
+except ImportError:  # pragma: no cover
+    RGBLED = None
+
 
 class RGB_Indicator(object):
-    def __init__(self, enabled:bool=True, verbose:bool=False, pins:tuple=None,red_pin:int=None, green_pin:int=None, blue_pin:int=None, pwm:bool=True, active_high:bool=True, initial_color:tuple=(255,0,0)):
+    def __init__(self, enabled: bool = False, verbose: bool = False, pins: tuple = None, red_pin: int = None, green_pin: int = None, blue_pin: int = None, pwm: bool = True, active_high: bool = True, initial_color: tuple = (255, 0, 0)):
         """
         Initialize the RGB indicator LED wrapper.
 
@@ -34,14 +46,19 @@ class RGB_Indicator(object):
         """
         self.__enabled = enabled
         self.__verbose = verbose
-        if(self.__enabled):
-            assert ((red_pin and green_pin and blue_pin) or pins) and not ((red_pin or green_pin or blue_pin) and pins), ValueError
-            self.__rgbLED = RGBLED(red_pin,green_pin,blue_pin, active_high=True, pwm=True, initial_value=self.__unit_color)
-        else: 
-            self.__rgbLED = None
-
         self.__color = initial_color
-        self.__unit_color = map(self.__rgb_to_unit, self.__color)
+        self.__unit_color = tuple(self.__rgb_to_unit(c) for c in self.__color)
+
+        if self.__enabled and RGBLED is not None:
+            if pins is not None:
+                self.__rgbLED = RGBLED(*pins, active_high=active_high, pwm=pwm, initial_value=self.__unit_color)
+            else:
+                assert red_pin is not None and green_pin is not None and blue_pin is not None, ValueError(
+                    "Either pins or all three RGB pins must be provided"
+                )
+                self.__rgbLED = RGBLED(red_pin, green_pin, blue_pin, active_high=active_high, pwm=pwm, initial_value=self.__unit_color)
+        else:
+            self.__rgbLED = None
 
     def set_color(self, r:int=None, g:int=None, b:int=None, color:tuple=None, default_color:tuple=(255,0,0)):
         """
@@ -65,19 +82,16 @@ class RGB_Indicator(object):
         None
             This method updates the stored color and the LED output.
         """
-        assert ((r and g and b) or color) and not ((r or g or b) and color), ValueError
-        #depending on whether r,g,b values are passed individually or as a tuple, set the
-        if(r and g and b):
-            self.__color = (r,g,b)
-        elif(color):
+        if color is not None:
             self.__color = color
+        elif r is not None and g is not None and b is not None:
+            self.__color = (r, g, b)
         else:
             self.__color = default_color
-        
-        #convert the color in rgb format to unit format 
-        self.__unit_color = map(self.rgb_to_unit,self.__color)
 
-        if(self.__enabled):
+        self.__unit_color = tuple(self.__rgb_to_unit(c) for c in self.__color)
+
+        if self.__enabled and self.__rgbLED is not None:
             self.__rgbLED.color = self.__unit_color
         
     def __rgb_to_unit(self, val: int | float) -> float:

@@ -1,3 +1,11 @@
+"""
+ServoDriver_Util.py - Servo driver utility notes and examples.
+
+This module contains commented-out example code for initializing PWM servo
+hardware using Adafruit PCA9685 and the Raspberry Pi I2C bus. It is provided
+as a reference for future servo actuation integration.
+"""
+
 # import board
 # import busio
 # import adafruit_pca9685

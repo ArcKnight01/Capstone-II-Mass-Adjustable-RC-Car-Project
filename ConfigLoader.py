@@ -1,3 +1,14 @@
+"""
+ConfigLoader.py - YAML configuration loader for the RC car project.
+
+This module provides helpers to load YAML configuration files from the
+`config/` directory, to read nested settings safely, and to unwrap config
+entries that use a ``value`` wrapper.
+
+Usage:
+    from ConfigLoader import load_config_bundle, read_nested
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

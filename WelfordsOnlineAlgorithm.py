@@ -1,3 +1,10 @@
+"""
+WelfordsOnlineAlgorithm.py - Online mean and variance accumulator.
+
+This module implements Welford's algorithm for numerically stable streaming
+statistics, useful for adaptive noise estimation and runtime tuning.
+"""
+
 class WelfordsOnline:
     __slots__ = ("n", "mean", "m2")
 

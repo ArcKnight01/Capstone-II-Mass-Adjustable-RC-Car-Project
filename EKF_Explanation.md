@@ -44,7 +44,7 @@ The separation allows:
 
 ### Why is the dynamics model needed?
 
-A linear Kalman filter uses a constant transition matrix $\mathbf{F}$ that maps $\mathbf{x}_k = \mathbf{F}\mathbf{x}_{k-1}$ — only valid when motion is linear. For a vehicle, position derivatives depend on $\sin\psi$ and $\cos\psi$, and the lateral dynamics couple velocity, yaw rate, and steering nonlinearly. The EKF handles this by *linearising* $f$ at each step: it evaluates the full nonlinear model once to propagate the mean, then takes the Jacobian $\mathbf{F}_k = \partial f_d/\partial \mathbf{x}$ to propagate the covariance. The Jacobian is computed numerically using central differences.
+A linear Kalman filter uses a constant transition matrix $\mathbf{J}$ that maps $\mathbf{x}_k = \mathbf{J}\mathbf{x}_{k-1}$ — only valid when motion is linear. For a vehicle, position derivatives depend on $\sin\psi$ and $\cos\psi$, and the lateral dynamics couple velocity, yaw rate, and steering nonlinearly. The EKF handles this by *linearising* $f$ at each step: it evaluates the full nonlinear model once to propagate the mean, then takes the Jacobian $\mathbf{J}_k = \partial f_d/\partial \mathbf{x}$ to propagate the covariance. The Jacobian is computed numerically using central differences.
 
 ### Software Architecture Diagram
 
@@ -184,7 +184,7 @@ $$
 The speed clamp avoids division by zero while preserving the direction of travel in reverse:
 
 $$
-\dot{x}_{x,\text{safe}} = \operatorname{sign}(\dot{x}_x)\max(|\dot{x}_x|,\; 0.3)
+\dot{x}_{x,\text{safe}} = \mathrm{sign}(\dot{x}_x)\max(|\dot{x}_x|,\; 0.3)
 $$
 
 Tire slip angles (small-angle linear approximation):
@@ -261,28 +261,28 @@ $$
 After propagation, yaw and roll are wrapped to $[-\pi, \pi)$:
 
 $$
-\psi \leftarrow \operatorname{atan2}(\sin\psi,\cos\psi), \qquad \phi \leftarrow \operatorname{atan2}(\sin\phi,\cos\phi)
+\psi \leftarrow \mathrm{atan2}(\sin\psi,\cos\psi), \qquad \phi \leftarrow \mathrm{atan2}(\sin\phi,\cos\phi)
 $$
 
 ---
 
-## 6. State-Transition Jacobian $\mathbf{F}_k$
+## 6. State-Transition Jacobian $\mathbf{J}_k$
 
-### 6.1 What $\mathbf{F}_k$ Is
+### 6.1 What $\mathbf{J}_k$ Is
 
 The state-transition Jacobian is the local linearisation of the discrete nonlinear process model:
 
 $$
-\mathbf{F}_k = \left.\frac{\partial f_d}{\partial \mathbf{x}}\right|_{\mathbf{x}_{k-1}^+,\,\mathbf{u}_k}
+\mathbf{J}_k = \left.\frac{\partial f_d}{\partial \mathbf{x}}\right|_{\mathbf{x}_{k-1}^+,\,\mathbf{u}_k}
 $$
 
-In plain language: *if the current state estimate shifts a little in any direction, $\mathbf{F}_k$ tells the EKF how much the next predicted state shifts in response.* That is why it appears inside the covariance prediction:
+In plain language: *if the current state estimate shifts a little in any direction, $\mathbf{J}_k$ tells the EKF how much the next predicted state shifts in response.* That is why it appears inside the covariance prediction:
 
 $$
-\mathbf{P}_k^- = \mathbf{F}_k \mathbf{P}_{k-1}^+ \mathbf{F}_k^T + \mathbf{Q}_k
+\mathbf{P}_k^- = \mathbf{J}_k \mathbf{P}_{k-1}^+ \mathbf{J}_k^T + \mathbf{Q}_k
 $$
 
-Think of $\mathbf{P}$ as an ellipsoid of uncertainty. $\mathbf{F}_k \mathbf{P} \mathbf{F}_k^T$ stretches and rotates the ellipsoid according to how the nonlinear dynamics would distort a small cloud of nearby states. $\mathbf{Q}_k$ inflates it to account for unmodelled forces and bias drift.
+Think of $\mathbf{P}$ as an ellipsoid of uncertainty. $\mathbf{J}_k \mathbf{P} \mathbf{J}_k^T$ stretches and rotates the ellipsoid according to how the nonlinear dynamics would distort a small cloud of nearby states. $\mathbf{Q}_k$ inflates it to account for unmodelled forces and bias drift.
 
 ### 6.2 Physical Meaning of the Non-Zero Entries
 
@@ -321,15 +321,15 @@ $$
 For forward Euler:
 
 $$
-\mathbf{F}_k \approx \mathbf{I} + \mathbf{A}_k\,\Delta t
+\mathbf{J}_k \approx \mathbf{I} + \mathbf{A}_k\,\Delta t
 $$
 
 ### 6.4 Numerical Computation
 
-The code does not use the symbolic matrix directly. It computes $\mathbf{F}_k$ with central differences:
+The code does not use the symbolic matrix directly. It computes $\mathbf{J}_k$ with central differences:
 
 $$
-\mathbf{F}_k[:,i] = \frac{f_d(\mathbf{x}+\varepsilon\mathbf{e}_i,\mathbf{u}) - f_d(\mathbf{x}-\varepsilon\mathbf{e}_i,\mathbf{u})}{2\varepsilon}, \qquad \varepsilon = 10^{-6}
+\mathbf{J}_k[:,i] = \frac{f_d(\mathbf{x}+\varepsilon\mathbf{e}_i,\mathbf{u}) - f_d(\mathbf{x}-\varepsilon\mathbf{e}_i,\mathbf{u})}{2\varepsilon}, \qquad \varepsilon = 10^{-6}
 $$
 
 ---
@@ -348,7 +348,7 @@ $\mathbf{Q}_k$ is the honest admission that the dynamics model is imperfect. Eve
 The current $\mathbf{Q}$ is diagonal (states treated as uncorrelated in their noise):
 
 $$
-\mathbf{Q}(\Delta t) = \operatorname{diag}\!\left(
+\mathbf{Q}(\Delta t) = \mathrm{diag}\!\left(
 10^{-4},\;
 10^{-4},\;
 (\sigma_{\dot\psi}\Delta t)^2,\;
@@ -391,10 +391,10 @@ $$
 \mathbf{x}_k^- = f_d(\mathbf{x}_{k-1}^+, \mathbf{u}_k)
 $$
 $$
-\mathbf{F}_k = \left.\frac{\partial f_d}{\partial \mathbf{x}}\right|_{\mathbf{x}_{k-1}^+,\,\mathbf{u}_k}
+\mathbf{J}_k = \left.\frac{\partial f_d}{\partial \mathbf{x}}\right|_{\mathbf{x}_{k-1}^+,\,\mathbf{u}_k}
 $$
 $$
-\mathbf{P}_k^- = \mathbf{F}_k \mathbf{P}_{k-1}^+ \mathbf{F}_k^T + \mathbf{Q}_k
+\mathbf{P}_k^- = \mathbf{J}_k \mathbf{P}_{k-1}^+ \mathbf{J}_k^T + \mathbf{Q}_k
 $$
 
 ### Initial Covariance $\mathbf{P}_0$
@@ -402,7 +402,7 @@ $$
 From `config/ekf.yaml`, using $\text{rad}(\theta) = \pi\theta/180$:
 
 $$
-\mathbf{P}_0 = \operatorname{diag}\!\left(
+\mathbf{P}_0 = \mathrm{diag}\!\left(
 10^2,\;
 10^2,\;
 \text{rad}(30)^2,\;
@@ -441,10 +441,10 @@ h_{\text{pos}}(\mathbf{x}) = \begin{bmatrix}x_e\\x_n\end{bmatrix},
 $$
 
 $$
-\mathbf{R}_{\text{pos}} = \operatorname{diag}(2.5^2,\;2.5^2) = \operatorname{diag}(6.25,\;6.25)\;\text{m}^2
+\mathbf{R}_{\text{pos}} = \mathrm{diag}(2.5^2,\;2.5^2) = \mathrm{diag}(6.25,\;6.25)\;\text{m}^2
 $$
 
-If gpsd reports $e_{px}$, $e_{py}$, those are used instead: $\mathbf{R}_{\text{pos}} = \operatorname{diag}(e_{px}^2,\; e_{py}^2)$.
+If gpsd reports $e_{px}$, $e_{py}$, those are used instead: $\mathbf{R}_{\text{pos}} = \mathrm{diag}(e_{px}^2,\; e_{py}^2)$.
 
 **Note on GPS position accuracy:** The 2.5 m sigma is intentionally large. For an RC car (wheelbase 0.30 m), GPS position alone is nearly useless for local path planning. The filter carries GPS position only to prevent long-term position drift during sessions where the dynamics accumulate error. GPS *velocity* is far more reliable ($\sigma \approx 0.05$ m/s) and carries most of the GPS information at speed.
 
@@ -477,7 +477,7 @@ $$
 Providing this analytically saves 22 extra process-model evaluations per GPS velocity update (11 state dimensions × 2 perturbation directions for central differences).
 
 $$
-\mathbf{R}_{\text{vel}} = \operatorname{diag}(0.05^2,\;0.05^2) = \operatorname{diag}(0.0025,\;0.0025)\;\text{m}^2/\text{s}^2
+\mathbf{R}_{\text{vel}} = \mathrm{diag}(0.05^2,\;0.05^2) = \mathrm{diag}(0.0025,\;0.0025)\;\text{m}^2/\text{s}^2
 $$
 
 This update is skipped when reported speed is below 0.2 m/s to avoid ill-conditioned Jacobians at near-zero velocity.
@@ -609,7 +609,7 @@ $$
 GPS course-over-ground to ENU yaw:
 
 $$
-\psi = \operatorname{wrap}\!\left(\frac{\pi}{2} - \operatorname{deg2rad}(\text{track}_\text{deg})\right)
+\psi = \mathrm{wrap}\!\left(\frac{\pi}{2} - \mathrm{deg2rad}(\text{track}_\text{deg})\right)
 $$
 
 GPS speed and track to ENU velocity, then rotated to the body frame:
@@ -808,7 +808,90 @@ P^+ = (I - K H) P^- (I - K H)^T + K R K^T    (Joseph form)
 
 ---
 
-## 15. Key Matrices at a Glance
+## 15. Probabilistic Foundations: The Gaussian Assumption and IMU Bias Drift
+
+### 15.1 Does the EKF Have a PDF Function?
+
+A common point of confusion: the EKF does not explicitly build or evaluate a probability density function (PDF) anywhere in the code. What it *does* do is maintain the two parameters that completely describe a multivariate Gaussian distribution:
+
+$$
+p(\mathbf{x}_k \mid \mathbf{z}_{1:k}) \approx \mathcal{N}\!\left(\mathbf{x}_k;\; \boldsymbol{\mu}_k = \hat{\mathbf{x}}_k^+,\; \boldsymbol{\Sigma}_k = \mathbf{P}_k^+\right)
+$$
+
+The state vector $\hat{\mathbf{x}}^+$ is the **mean** of the Gaussian, and the covariance matrix $\mathbf{P}^+$ is its **covariance**. The Kalman update equations are exactly the closed-form solution to Bayesian fusion when both the prior and the likelihood are Gaussian — so the filter *is* the PDF computation. There is nothing missing.
+
+Concretely:
+
+| Concept | Where it lives |
+|:---|:---|
+| Prior mean $\hat{\mathbf{x}}^-$ | State vector after `predict()` |
+| Prior covariance $\mathbf{P}^-$ | Covariance matrix after `predict()` |
+| Likelihood from sensor $z$ | Encoded in $h(\mathbf{x})$, $\mathbf{H}$, and $\mathbf{R}$ |
+| Posterior mean $\hat{\mathbf{x}}^+$ | State vector after `update()` — the MAP estimate |
+| Posterior covariance $\mathbf{P}^+$ | Covariance matrix after `update()` |
+
+The innovation $\mathbf{y} = \mathbf{z} - h(\hat{\mathbf{x}}^-)$ is Gaussian with covariance $\mathbf{S} = \mathbf{H}\mathbf{P}^-\mathbf{H}^T + \mathbf{R}$. The Kalman gain $\mathbf{K} = \mathbf{P}^-\mathbf{H}^T\mathbf{S}^{-1}$ weights the correction by how trustworthy the sensor is relative to the prediction.
+
+### 15.2 When the Gaussian Assumption Breaks Down
+
+The EKF linearises $f$ and $h$ at the current estimate. That approximation is valid only when the true state is close enough to the estimate that the nonlinear terms are small compared to the uncertainty. Situations where this fails:
+
+- **Large initial uncertainty in yaw** — $\sin\psi$ and $\cos\psi$ are nonlinear, so a wide prior on $\psi$ produces a banana-shaped (non-Gaussian) position uncertainty. Initialising $\psi$ from the BNO055 NDOF with $\sigma_\psi \approx 0.026$ rad keeps this tight.
+- **Very high speeds or tight turns** — slip angle nonlinearities grow; the bicycle model linearisation may be inaccurate.
+- **Long GPS outages** — position uncertainty grows unbounded from dead reckoning; the filter remains internally consistent but the absolute estimate drifts.
+- **Bad measurements not gated** — a GPS multipath spike will be absorbed as a real measurement. Mahalanobis-distance gating (not yet implemented) would reject outliers.
+
+### 15.3 IMU Bias Drift: Modeling and Limitations
+
+IMU accelerometers and gyroscopes have two main error sources that accumulate into dead-reckoning error:
+
+1. **Fixed offset (bias)** — a constant error present even at rest, due to manufacturing tolerances and component aging.
+2. **Temperature-dependent drift** — bias changes as the sensor warms up or the ambient temperature changes.
+
+The state vector includes three bias states:
+
+| State | Symbol | Models |
+|:---|:---:|:---|
+| Index 8 | $b_{ax}$ | longitudinal accelerometer bias offset |
+| Index 9 | $b_{ay}$ | lateral accelerometer bias offset |
+| Index 10 | $b_{gz}$ | gyro z-axis (yaw rate) bias offset |
+
+Each bias is modelled as a **random walk** in the predict step:
+
+$$
+\dot{b}_{ax} = w_{bax}, \quad \dot{b}_{ay} = w_{bay}, \quad \dot{b}_{gz} = w_{bgz}
+$$
+
+where $w_b \sim \mathcal{N}(0, \sigma_b^2)$ is zero-mean white noise. The EKF does not predict *which direction* the bias will drift, but it allows the covariance to grow proportionally to $\sigma_b^2 \Delta t$, so sensor measurements can pull the estimate back. The process noise entries $\sigma_{b_a}$ and $\sigma_{b_g}$ (see Section 7) control how quickly biases are allowed to change:
+
+- **Small $\sigma_b$** — bias is assumed nearly constant; the filter resists rapid re-calibration. Safe when the IMU is thermally stable.
+- **Large $\sigma_b$** — bias can drift quickly; the filter is more responsive to systematic offsets but noisier.
+
+### 15.4 BNO055 NDOF Internal Compensation
+
+The BNO055 sensor run in **NDOF (Nine Degrees of Freedom) fusion mode** includes on-chip compensation that significantly reduces the bias issues described above:
+
+- **Hard-iron / soft-iron calibration** — removes fixed magnetic distortion from the magnetometer.
+- **Gyroscope offset calibration** — measures gyro zero-rate offset on-chip and subtracts it continuously.
+- **Accelerometer calibration** — corrects for gravity alignment offset.
+- **Temperature coefficient compensation** — the BNO055 data sheet notes internal temperature compensation for the gyroscope rate output.
+
+Because of this, the *orientation* output (Euler angles / quaternion) from the BNO055 NDOF is far more reliable than integrating raw gyro or accelerometer readings. This is the design intent: trust the BNO055 orientation heavily (small $\mathbf{R}$ entries for yaw, roll, pitch updates), use the linear acceleration and yaw rate as complementary inputs, and let the EKF only need to track the *residual* bias not corrected by the chip.
+
+**Practical implication:** the bias states $b_{ax}$, $b_{ay}$, $b_{gz}$ in the EKF represent *residual errors* on top of what NDOF already removes. They will typically converge to small values and stay small during normal operation. Monitoring the diagonal entries of $\mathbf{P}$ for these states tells you how certain the EKF is about the residual bias.
+
+### 15.5 Signs that the Filter is Healthy
+
+| Indicator | Healthy range | Action if outside range |
+|:---|:---:|:---|
+| Innovation $\mathbf{y}$ | $\|\mathbf{y}\| \ll \sqrt{\mathbf{S}}$ | Check sensor noise $\mathbf{R}$ — may be too small |
+| $\mathbf{P}$ diagonals | Decreasing then levelling off | If growing unbounded: check $\mathbf{Q}$ or sensor updates |
+| Bias states $b_{ax}$, $b_{ay}$, $b_{gz}$ | $|b| < 0.5\,\text{m/s}^2$, $< 0.05\,\text{rad/s}$ | Large bias: IMU may have warm-up drift; wait for NDOF calibration |
+| Position uncertainty $\sigma_{x_e}$, $\sigma_{x_n}$ | Bounded by GPS period × velocity | Unbounded: GPS updates not arriving |
+
+---
+
+## 16. Key Matrices at a Glance
 
 $$
 \mathbf{x} = [x_e,\; x_n,\; \psi,\; \phi,\; \theta,\; \dot{x}_x,\; \dot{x}_y,\; r,\; b_{ax},\; b_{ay},\; b_{gz}]^T
@@ -820,8 +903,8 @@ $$
 
 | Update | $h(\mathbf{x})$ | H type | $\mathbf{R}$ |
 |:---|:---|:---:|:---|
-| GPS position | $[x_e,\; x_n]^T$ | analytic | $\operatorname{diag}(6.25,\; 6.25)$ m² |
-| GPS velocity | $\mathbf{R}(\psi)[\dot{x}_x,\;\dot{x}_y]^T$ | analytic | $\operatorname{diag}(0.0025,\; 0.0025)$ m²/s² |
+| GPS position | $[x_e,\; x_n]^T$ | analytic | $\mathrm{diag}(6.25,\; 6.25)$ m² |
+| GPS velocity | $\mathbf{R}(\psi)[\dot{x}_x,\;\dot{x}_y]^T$ | analytic | $\mathrm{diag}(0.0025,\; 0.0025)$ m²/s² |
 | IMU yaw | $[\psi]$ | analytic | $[6.76\times10^{-4}]$ rad² |
 | IMU roll | $[\phi]$ | analytic | $[6.76\times10^{-4}]$ rad² |
 | IMU pitch | $[\theta]$ | analytic | $[6.76\times10^{-4}]$ rad² |
@@ -831,26 +914,3 @@ $$
 ---
 
 *This document was generated from the current repository implementation. See `ExtendedKalmanFilter.py`, `DynamicsModel.py`, and `Odometry.py` for the exact code. `EKF_Process_Diagram.md` and `EKF_Explanation.tex` are superseded by this file.*
-
-``` mermaid
-%%{init: {'flowchart': {'curve': 'step'}}}%%
-flowchart LR
-    %% RC Receiver → Servo Motor
-    RC[RC Receiver] -->|PWM signal| SERVO[Servo Motor]
-
-    %% RC Receiver → Arduino Nano → Controller
-    RC -->|PWM signal| NANO[Arduino Nano]
-    NANO -->|"UART (ttyUSB0)"| RCNPY["RCReceiverNano.py"]
-    RCNPY --> CTRL["Controller.py"]
-
-    %% IMU → Odometry → Controller
-    IMU["BNO055 9DOF IMU"] -->|I2C| IMUPY["IMU.py"]
-    IMUPY -->|"linear acceleration & absolute orientation"| MAF["Moving Average Filter"]
-    MAF --> ODOM["Odometry.py"]
-    ODOM -->|"position & velocity"| CTRL
-
-    %% GPS → Controller
-    GPS["Adafruit Ultimate GPS Hat"] --> GPSPY["GPS_System.py"]
-    GPSPY -->|"latlon & last fix data"| CTRL
-
-```

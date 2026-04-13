@@ -1,15 +1,36 @@
+"""
+Odometry.py - IMU-based dead reckoning and motion estimation.
+
+This module integrates IMU acceleration data to estimate vehicle position, velocity,
+and orientation. It applies optional filtering (moving average, low-pass) to smooth
+sensor readings and performs trapezoidal integration for velocity/position estimation.
+
+Data Flow:
+1. Read IMU: raw acceleration, gyro, magnetometer, quaternion
+2. Apply filters: moving average on gyro/accel, low-pass on linear accel
+3. Rotate body-frame accel to world frame using quaternion
+4. Integrate: accel → velocity → position (trapezoidal rule)
+5. Output: position, velocity, orientation in world frame
+
+Usage:
+    python Odometry.py
+    - Initializes IMU, runs calibration, prints odometry data in loop
+
+Configuration: Filters and integration parameters via constructor arguments.
+"""
+
 import sys
 import os
 import time
 import csv
-import numpy as np 
+import numpy as np
 import pandas as pd
 
 try:
-    robotSupported = os.uname().nodename == ('terminatorpi' or 'robotpi' or 'carpi')
+    robotSupported = os.uname().nodename in ('terminatorpi', 'robotpi', 'carpi')
 except:
     import platform
-    robotSupported = platform.uname().node == ('terminatorpi' or 'robotpi' or 'carpi')
+    robotSupported = platform.uname().node in ('terminatorpi', 'robotpi', 'carpi')
 if robotSupported:
     import board
     import busio
@@ -19,7 +40,9 @@ if robotSupported:
 from IMUUtil import *
 from RobotClock import Clock
 from IMU import *
-from MovingAverageFilter import LowPassFilter, MovingAverageFilter
+from MovingAverageFilter import MovingAverageFilter
+from LowPassFilter import LowPassFilter
+from HighPassFilter import HighPassFilter
 
 class Odometry(object):
     """ Calculates position, velocity and angular velocity from acceleration and orientation"""
@@ -30,9 +53,9 @@ class Odometry(object):
                  initial_position : tuple = (0,0,0),
                  filter_gyro: bool = False,
                  gyro_filter_window_size: int = 3,
-                 filter_linear_acceleration: bool = False,
+                 filter_linear_acceleration: bool = True,
                  linear_acceleration_filter_window_size: int = 3,
-                 low_pass_linear_acceleration: bool = False,
+                 low_pass_linear_acceleration: bool = True,
                  linear_acceleration_low_pass_cutoff_hz: float = 2.0,
 
                  ):
@@ -118,7 +141,7 @@ class Odometry(object):
 
     @staticmethod
     def _to_vector3(values: tuple | list | np.ndarray | None) -> np.ndarray:
-        """Convert a sensor vector into a finite ``(3,)`` NumPy array."""
+        """Convert a sensor vector into a finite ``(3,)`` NumPy array.""" #TODO update to NumPy style documentation for parameters and return value 
         if values is None:
             return np.zeros(3, dtype=float)
 
@@ -134,7 +157,7 @@ class Odometry(object):
 
     @staticmethod
     def _build_vector_filters(enabled: bool, window_size: int) -> tuple[MovingAverageFilter, MovingAverageFilter, MovingAverageFilter] | None:
-        """Create one moving-average filter per vector axis when enabled."""
+        """Create one moving-average filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
         if not enabled:
             return None
 
@@ -142,18 +165,26 @@ class Odometry(object):
 
     @staticmethod
     def _build_vector_low_pass_filters(enabled: bool, cutoff_hz: float) -> tuple[LowPassFilter, LowPassFilter, LowPassFilter] | None:
-        """Create one low-pass filter per vector axis when enabled."""
+        """Create one low-pass filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
         if not enabled:
             return None
 
         return tuple(LowPassFilter(cutoff_hz) for _ in range(3))
 
     @staticmethod
-    def _apply_vector_filters(
+    def _build_vector_high_pass_filters(enabled: bool, cutoff_hz: float) -> tuple[HighPassFilter, HighPassFilter, HighPassFilter] | None:
+        """Create one high-pass filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
+        if not enabled:
+            return None
+
+        return tuple(HighPassFilter(cutoff_hz) for _ in range(3))
+
+    @staticmethod
+    def _apply_vector_filters( #TODO rename to _apply_vector_moving_average_filters
         values: tuple | list | np.ndarray | None,
         filters: tuple[MovingAverageFilter, MovingAverageFilter, MovingAverageFilter] | None,
     ) -> tuple[float, float, float]:
-        """Filter a 3-axis vector with one moving-average filter per axis."""
+        """Filter a 3-axis vector with one moving-average filter per axis.""" #TODO update to NumPy style documentation for parameters and return value 
         vector = Odometry._to_vector3(values)
         if filters is None:
             return tuple(vector.tolist())
@@ -169,7 +200,23 @@ class Odometry(object):
         filters: tuple[LowPassFilter, LowPassFilter, LowPassFilter] | None,
         dt: float,
     ) -> tuple[float, float, float]:
-        """Filter a 3-axis vector with one low-pass filter per axis."""
+        """Filter a 3-axis vector with one low-pass filter per axis.""" #TODO update to NumPy style documentation for parameters and return value 
+        vector = Odometry._to_vector3(values)
+        if filters is None:
+            return tuple(vector.tolist())
+
+        return tuple(
+            filter_axis.update(component, dt)
+            for filter_axis, component in zip(filters, vector)
+        )
+
+    @staticmethod
+    def _apply_vector_high_pass_filters(
+        values: tuple | list | np.ndarray | None,
+        filters: tuple[HighPassFilter, HighPassFilter, HighPassFilter] | None,
+        dt: float,
+    ) -> tuple[float, float, float]:
+        """Filter a 3-axis vector with one high-pass filter per axis."""  #TODO update to NumPy style documentation for parameters and return value 
         vector = Odometry._to_vector3(values)
         if filters is None:
             return tuple(vector.tolist())
@@ -180,7 +227,7 @@ class Odometry(object):
         )
 
     def _update_rotation_matrix(self, quaternion: tuple | list | np.ndarray | None) -> None:
-        """Refresh the cached body-to-world rotation matrix when the quaternion is valid."""
+        """Refresh the cached body-to-world rotation matrix when the quaternion is valid.""" #TODO update to NumPy style documentation for parameters and return value 
         if quaternion is None:
             return
 
@@ -239,7 +286,7 @@ class Odometry(object):
             'quaternion' : self.__quaternion,
         }
     
-    def find_north(self):
+    def find_north(self): #TODO move to IMU.py and integrate with existing code there.
         """
         Estimate a north-referenced orientation from gravity and magnetic vectors.
 

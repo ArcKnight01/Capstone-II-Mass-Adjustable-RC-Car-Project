@@ -1,3 +1,20 @@
+"""
+RCReceiverNano.py - Read RC receiver steering data from an Arduino Nano over serial.
+
+This module parses NMEA-style ``$STEER,pulseWidth,angle*XX`` messages from a
+serial-connected Arduino Nano and exposes steering information plus freshness
+metadata.
+
+Usage:
+    python RCReceiverNano.py [warmup_seconds] [flush_buffer]
+
+Arguments:
+    warmup_seconds : int
+        Optional delay before reading, used to simulate a calibration buffer.
+    flush_buffer : bool
+        Optional flag indicating whether to clear the serial buffer before reading.
+"""
+
 import serial
 import sys
 import time
@@ -271,22 +288,30 @@ class RCReceiver(object):
             print(f"Cleared {queued_bytes} incoming bytes from the serial queue")
 
 if __name__ == "__main__":
-    if(sys.argv[1:] != list()):
-        print("args passed!")
-        print(sys.argv[1:])
-    else:
-        print("no args passed! if you want to simulate calibration time, add an int after running this file (e.g. python3 RCReceiverNano.py 4 to simulate 4 seconds calibration time to build up serial buffer)")
-       
-    rc_receiver = RCReceiver()
-    if(sys.argv[1:] != list()):
-        secs_wait : int = int(sys.argv[1:][0])
-        print(f"waiting {secs_wait} seconds to simulate calibration time between initializing the RCReceiver and reading data causing buffer build up")
-        time.sleep(float(secs_wait))
-        do_flush = (True if str(sys.argv[1:][1])=='True' else False)
-        if do_flush:
-            rc_receiver.reset()
+    warmup_seconds = 0
+    flush_buffer = False
 
-    while(True):
+    if len(sys.argv) > 1:
+        try:
+            warmup_seconds = int(sys.argv[1])
+        except ValueError:
+            print("Warning: warmup_seconds must be an integer. Defaulting to 0.")
+    if len(sys.argv) > 2:
+        flush_buffer = str(sys.argv[2]).strip().lower() in ("true", "1", "yes", "y")
+
+    if warmup_seconds > 0:
+        print(f"Waiting {warmup_seconds} seconds before reading receiver data...")
+        time.sleep(warmup_seconds)
+
+    rc_receiver = RCReceiver()
+    if flush_buffer:
+        rc_receiver.reset()
+
+    print("Reading RC receiver data. Press Ctrl+C to exit.")
+    while True:
         result = rc_receiver.get_data()
-        print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}°")
-        pass
+        if result is not None:
+            print(f"Pulse: {result['pulse_width']}us | Angle: {result['angle']}° | Fresh: {result['is_fresh']}")
+        else:
+            print("No valid receiver message available yet.")
+        time.sleep(0.1)

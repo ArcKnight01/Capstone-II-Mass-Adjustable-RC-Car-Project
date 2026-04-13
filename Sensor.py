@@ -1,4 +1,11 @@
 
+"""
+Sensor.py - Base sensor abstraction.
+
+This module defines a small base class for sensors and sensor-like subsystems,
+carrying common flags for verbosity and enabled state.
+"""
+
 class Sensor(object):
     """
     Base class for sensors that all sensors inherit from,

@@ -1,3 +1,14 @@
+"""
+GPS_System.py - GPS daemon client wrapper.
+
+This module wraps gpsd communication to cache the latest GPS fix and expose it
+in a controller-friendly dictionary. It supports both one-off reads and a
+background reader thread.
+
+Usage:
+    python GPS_System.py
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

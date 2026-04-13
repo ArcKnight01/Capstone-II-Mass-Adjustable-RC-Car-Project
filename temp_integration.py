@@ -19,7 +19,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from MovingAverageFilter import LowPassFilter, MovingAverageFilter
+from MovingAverageFilter import MovingAverageFilter
+from LowPassFilter import LowPassFilter
+from HighPassFilter import HighPassFilter
 
 
 REPO_ROOT = Path(__file__).resolve().parent

@@ -1,3 +1,13 @@
+"""
+Power.py - Battery and power monitoring utilities.
+
+This module wraps psutil battery information for the RC car control system.
+It exposes battery percentage, remaining time, and charger status.
+
+Usage:
+    python Power.py
+"""
+
 import psutil
 
 # https://www.geeksforgeeks.org/python/python-script-to-show-laptop-battery-percentage/

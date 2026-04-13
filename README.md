@@ -2,8 +2,7 @@
 
 This repository contains the control, sensor, logging, and analysis code for the Northeastern University Mass Adjustable RC Car Capstone II project, advised by Professor Carlos Hidrovo.
 
-Full technical document:
-https://docs.google.com/document/d/14RuH56wbCEfM_qvJvr-gffSnfkfuiTqH0ljx36ycuP4/edit?usp=sharing
+Full technical document: [Technical Document](Technical Document.md)
 
 This README is the short, practical setup guide for working in this repository. The technical document still holds the detailed wiring diagrams, long-form hardware notes, and reference material.
 
@@ -15,7 +14,6 @@ This README is the short, practical setup guide for working in this repository. 
 - `GPS_System.py` wraps `gpsd` and exposes the latest GPS fix for the controller.
 - `Plotting.py` plots every numeric column in `data/data.csv`.
 - `Arduino Sketches/` contains the Nano firmware used for RC receiver testing and passthrough.
-- `tools/bwsi-python.cmd` lets Windows users run scripts through the expected `bwsi` conda environment without activating it first.
 
 ## Expected Hardware
 
@@ -49,14 +47,7 @@ Use this path for editing the code, plotting logged data, and lightweight develo
    .\tools\bwsi-python.cmd Plotting.py
    ```
 
-4. For headless plotting from PowerShell:
-
-   ```powershell
-   $env:MPLBACKEND='Agg'
-   .\tools\bwsi-python.cmd Plotting.py
-   ```
-
-5. VS Code includes matching tasks:
+4. VS Code includes matching tasks:
    - `Python: Run active file in bwsi`
    - `Python: Run active file in bwsi (headless)`
 
@@ -147,6 +138,30 @@ Use this path for IMU, serial receiver, GPS, camera, and GPIO development.
 
 ## Running The Code
 
+### Data Flow
+
+``` mermaid
+%%{init: {'flowchart': {'curve': 'step'}}}%%
+flowchart LR
+    %% RC Receiver → Servo Motor
+    RC[RC Receiver] -->|PWM signal| SERVO[Servo Motor]
+
+    %% RC Receiver → Arduino Nano → Controller
+    RC -->|PWM signal| NANO[Arduino Nano]
+    NANO -->|"UART (ttyUSB0)"| RCNPY["RCReceiverNano.py"]
+    RCNPY --> CTRL["Controller.py"]
+
+    %% IMU → Odometry → Controller
+    IMU["BNO055 9DOF IMU"] -->|I2C| IMUPY["IMU.py"]
+    IMUPY -->|"linear acceleration & absolute orientation"| MAF["Moving Average Filter"]
+    MAF --> ODOM["Odometry.py"]
+    ODOM -->|"position & velocity"| CTRL
+
+    %% GPS → Controller
+    GPS["Adafruit Ultimate GPS Hat"] --> GPSPY["GPS_System.py"]
+    GPSPY -->|"latlon & last fix data"| CTRL
+
+```
 ### Main logger
 
 Run the controller on the Pi after the IMU, Arduino Nano, and optional GPS hardware are connected:
@@ -178,7 +193,112 @@ python GPS_System.py
 
 ### Plotting a logged run
 
-`Plotting.py` currently reads `./data/data.csv` and expects a `time` column. If you want to plot another run, either update `file_path` inside `Plotting.py` or rename/copy the target CSV to `data/data.csv`.
+`Plotting.py` now supports an optional CSV path and a headless mode:
+
+```bash
+python Plotting.py              # plots data/data.csv
+python Plotting.py data/imu.csv --no-show
+```
+
+The script accepts either `time` or `runtime` as the time axis column.
+
+### Running Individual Files
+
+Below are instructions for running each Python file in the repository. Most files can be run directly with `python <filename>.py` or using the wrapper on Windows.
+
+#### Core System Files
+
+- **Controller.py**: Main runtime loop for data logging.
+  - Usage: `python Controller.py [output_filename] [verbose]`
+  - Arguments: output_filename (default: "data"), verbose (True/False, default: True)
+  - Example: `python Controller.py test_run True`
+  - Data flow: Reads from IMU, RC receiver, battery; integrates odometry; logs to CSV.
+
+- **IMU.py**: Tests BNO055 IMU sensor interface.
+  - Usage: `python IMU.py`
+  - No arguments.
+  - Data flow: Initializes IMU, performs calibration, prints sensor readings.
+
+- **Odometry.py**: Tests IMU-based odometry integration.
+  - Usage: `python Odometry.py`
+  - No arguments.
+  - Data flow: Reads IMU data, applies filters, integrates acceleration to velocity/position.
+
+- **RCReceiverNano.py**: Tests Arduino Nano serial communication for RC steering.
+  - Usage: `python RCReceiverNano.py`
+  - No arguments.
+  - Data flow: Reads NMEA-style messages from serial, parses steering angle.
+
+- **GPS_System.py**: Tests GPS interface via gpsd.
+  - Usage: `python GPS_System.py`
+  - No arguments.
+  - Data flow: Connects to gpsd daemon, caches latest GPS fixes.
+
+#### Analysis and Visualization
+
+- **Plotting.py**: Plots CSV data columns vs time.
+  - Usage: `python Plotting.py [csv_file] [--no-show]`
+  - Arguments: optional CSV path (default: `data/data.csv`), `--no-show` to run headless.
+  - Data flow: Loads CSV, plots each numeric column.
+
+- **Animate.py**: Creates 3D animation of vehicle trajectory.
+  - Usage: `python Animate.py [csv_file]`
+  - Arguments: csv_file (default: data/simulated_data.csv)
+  - Data flow: Reads position/orientation from CSV, animates in 3D.
+
+- **temp_integration.py**: Rebuilds velocity/position from acceleration data.
+  - Usage: `python temp_integration.py [--filter-gyro] [--low-pass-linear-acceleration]`
+  - Arguments: Optional flags for filtering.
+  - Data flow: Reads acceleration, integrates with optional filtering, writes new CSV.
+
+#### Filters and Utilities
+
+- **test_filters.py**: Tests filter implementations.
+  - Usage: `python test_filters.py`
+  - No arguments.
+  - Data flow: Creates test signals, applies filters, prints results.
+
+- **ComplementaryFilter.py**: Example complementary filter usage.
+  - Usage: `python ComplementaryFilter.py` (if runnable)
+  - May require arguments for signals.
+
+- **LowPassFilter.py**: Example low-pass filter.
+  - Usage: Requires integration into other code.
+
+- **HighPassFilter.py**: Example high-pass filter.
+  - Usage: Requires integration.
+
+- **MovingAverageFilter.py**: Example moving average filter.
+  - Usage: Requires integration.
+
+#### Configuration and Models
+
+- **ConfigLoader.py**: Loads YAML configuration files.
+  - Usage: Imported by other modules.
+
+- **ModelFactory.py**: Creates model instances from config.
+  - Usage: Imported by other modules.
+
+- **DynamicsModel.py**: Vehicle dynamics model for EKF.
+  - Usage: Imported by EKF.
+
+- **ExtendedKalmanFilter.py**: EKF implementation.
+  - Usage: Imported by Controller (when enabled).
+
+#### Other Files
+
+- **Robot.py**: Placeholder robot simulator (not implemented).
+- **Power.py**: Battery monitoring.
+- **RobotClock.py**: Timing utilities.
+- **Sensor.py**: Base sensor class.
+- **IMUUtil.py**: IMU utilities.
+- **GPS_Util.py**: GPS utilities.
+- **Servo_Motors.py**: Servo control (Pi only).
+- **ServoDriver_Util.py**: Servo utilities.
+- **Messages.py**: NMEA message definitions.
+- **WelfordsOnlineAlgorithm.py**: Online statistics.
+- **wrapper_timer.py**: Timing utilities.
+- **RGB_Indicator.py**: LED indicator (Pi only).
 
 ## Bring-Up Notes
 

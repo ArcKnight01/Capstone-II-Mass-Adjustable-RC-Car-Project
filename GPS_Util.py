@@ -1,9 +1,20 @@
+"""
+GPS_Util.py - GPS helper functions and NMEA conversions.
+
+This module provides utilities for converting between latitude/longitude,
+NMEA-formatted strings, and local coordinate offsets. It also includes safe
+parsing and field extraction helpers for gpsd report objects.
+
+Usage:
+    from GPS_Util import safe_float, gpsd_report_get, parse_gpsd_time
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 import math
-import utm 
+import utm
 
 import numpy as np
 
@@ -51,18 +62,34 @@ def nmea_lon(lon_deg: float) -> str:
     muval = int((minflt - minval) * 1e6)
     return f"{int(degval):03d}{int(minval):02d}.{int(muval):06d}"
 
-def get_local_pos(datum_position, latlon)
+def get_local_pos(datum_position, latlon):
+    """
+    Convert a WGS84 latitude/longitude pair into local east/north offsets.
+
+    Parameters
+    ----------
+    datum_position : tuple
+        Reference UTM datum position as
+        ``(Datum_Easting, Datum_Northing, Datum_zone_number, Datum_zone_letter)``.
+    latlon : tuple
+        Latitude/longitude pair in decimal degrees.
+
+    Returns
+    -------
+    tuple
+        Local east/north offsets in meters relative to the datum.
+    """
     Datum_Easting, Datum_Northing, Datum_zone_number, Datum_zone_letter = datum_position
     Robot_Easting, Robot_Northing, Robot_zone_number, Robot_zone_letter = utm.from_latlon(
-        latlon[0], 
-        latlon[1], 
-        force_zone_number = Datum_zone_number, 
-        force_zone_letter = Datum_zone_letter
-        )
-    
+        latlon[0],
+        latlon[1],
+        force_zone_number=Datum_zone_number,
+        force_zone_letter=Datum_zone_letter,
+    )
+
     Easting = Robot_Easting - Datum_Easting
     Northing = Robot_Northing - Datum_Northing
-    
+
     return (Easting, Northing)
 
 

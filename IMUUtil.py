@@ -1,3 +1,11 @@
+"""
+IMUUtil.py - Utility functions for IMU sensor fusion.
+
+This module contains helper functions for converting accelerometer and
+magnetometer readings into roll, pitch, and yaw estimates, as well as
+simple gyro-based integration helpers.
+"""
+
 import numpy as np
 
 ### IMU Util
