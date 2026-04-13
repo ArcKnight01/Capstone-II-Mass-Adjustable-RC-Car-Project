@@ -666,7 +666,7 @@ if __name__ == '__main__':
 
     controller = Controller(
         verbose=verbose,
-        enabled=True,
+        enabled=(True if robotSupported else False),
         log_to_csv=True,
         csv_data_dir_name="data",
         csv_data_filename=filename,
