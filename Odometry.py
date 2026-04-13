@@ -141,7 +141,21 @@ class Odometry(object):
 
     @staticmethod
     def _to_vector3(values: tuple | list | np.ndarray | None) -> np.ndarray:
-        """Convert a sensor vector into a finite ``(3,)`` NumPy array.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Convert a sensor reading into a finite ``(3,)`` NumPy array.
+
+        Parameters
+        ----------
+        values : tuple, list, np.ndarray, or None
+            Raw sensor vector with exactly three elements.  If ``None``, not
+            finite, or not shape ``(3,)``, a zero vector is returned instead.
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(3,)`` array of ``float64``.  All elements are finite.
+            Returns ``np.zeros(3)`` when the input is invalid or ``None``.
+        """
         if values is None:
             return np.zeros(3, dtype=float)
 
@@ -157,7 +171,22 @@ class Odometry(object):
 
     @staticmethod
     def _build_vector_filters(enabled: bool, window_size: int) -> tuple[MovingAverageFilter, MovingAverageFilter, MovingAverageFilter] | None:
-        """Create one moving-average filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Create one moving-average filter per vector axis when filtering is enabled.
+
+        Parameters
+        ----------
+        enabled : bool
+            When ``False`` the function returns ``None`` and no filters are created.
+        window_size : int
+            Number of samples in the moving-average window for each axis.
+
+        Returns
+        -------
+        tuple of MovingAverageFilter or None
+            A 3-tuple ``(filter_x, filter_y, filter_z)`` when ``enabled`` is
+            ``True``, or ``None`` when ``enabled`` is ``False``.
+        """
         if not enabled:
             return None
 
@@ -165,7 +194,22 @@ class Odometry(object):
 
     @staticmethod
     def _build_vector_low_pass_filters(enabled: bool, cutoff_hz: float) -> tuple[LowPassFilter, LowPassFilter, LowPassFilter] | None:
-        """Create one low-pass filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Create one first-order low-pass filter per vector axis when filtering is enabled.
+
+        Parameters
+        ----------
+        enabled : bool
+            When ``False`` the function returns ``None`` and no filters are created.
+        cutoff_hz : float
+            Cutoff frequency in hertz applied to each axis filter.
+
+        Returns
+        -------
+        tuple of LowPassFilter or None
+            A 3-tuple ``(filter_x, filter_y, filter_z)`` when ``enabled`` is
+            ``True``, or ``None`` when ``enabled`` is ``False``.
+        """
         if not enabled:
             return None
 
@@ -173,18 +217,50 @@ class Odometry(object):
 
     @staticmethod
     def _build_vector_high_pass_filters(enabled: bool, cutoff_hz: float) -> tuple[HighPassFilter, HighPassFilter, HighPassFilter] | None:
-        """Create one high-pass filter per vector axis when enabled.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Create one first-order high-pass filter per vector axis when filtering is enabled.
+
+        Parameters
+        ----------
+        enabled : bool
+            When ``False`` the function returns ``None`` and no filters are created.
+        cutoff_hz : float
+            Cutoff frequency in hertz applied to each axis filter.
+
+        Returns
+        -------
+        tuple of HighPassFilter or None
+            A 3-tuple ``(filter_x, filter_y, filter_z)`` when ``enabled`` is
+            ``True``, or ``None`` when ``enabled`` is ``False``.
+        """
         if not enabled:
             return None
 
         return tuple(HighPassFilter(cutoff_hz) for _ in range(3))
 
     @staticmethod
-    def _apply_vector_filters( #TODO rename to _apply_vector_moving_average_filters
+    def _apply_vector_moving_average_filters(
         values: tuple | list | np.ndarray | None,
         filters: tuple[MovingAverageFilter, MovingAverageFilter, MovingAverageFilter] | None,
     ) -> tuple[float, float, float]:
-        """Filter a 3-axis vector with one moving-average filter per axis.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Apply per-axis moving-average filters to a 3-element sensor vector.
+
+        Parameters
+        ----------
+        values : tuple, list, np.ndarray, or None
+            Raw 3-axis sensor reading.  Invalid or ``None`` inputs are treated
+            as ``(0, 0, 0)`` via :meth:`_to_vector3`.
+        filters : tuple of MovingAverageFilter or None
+            A 3-tuple of filters, one per axis, as returned by
+            :meth:`_build_vector_filters`.  When ``None``, the input vector is
+            returned unchanged.
+
+        Returns
+        -------
+        tuple of float
+            3-element tuple ``(x, y, z)`` of filtered values.
+        """
         vector = Odometry._to_vector3(values)
         if filters is None:
             return tuple(vector.tolist())
@@ -200,7 +276,27 @@ class Odometry(object):
         filters: tuple[LowPassFilter, LowPassFilter, LowPassFilter] | None,
         dt: float,
     ) -> tuple[float, float, float]:
-        """Filter a 3-axis vector with one low-pass filter per axis.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Apply per-axis first-order low-pass filters to a 3-element sensor vector.
+
+        Parameters
+        ----------
+        values : tuple, list, np.ndarray, or None
+            Raw 3-axis sensor reading.  Invalid or ``None`` inputs are treated
+            as ``(0, 0, 0)`` via :meth:`_to_vector3`.
+        filters : tuple of LowPassFilter or None
+            A 3-tuple of filters, one per axis, as returned by
+            :meth:`_build_vector_low_pass_filters`.  When ``None``, the input
+            vector is returned unchanged.
+        dt : float
+            Elapsed time in seconds since the previous call.  Passed to each
+            filter's ``update`` method.
+
+        Returns
+        -------
+        tuple of float
+            3-element tuple ``(x, y, z)`` of filtered values.
+        """
         vector = Odometry._to_vector3(values)
         if filters is None:
             return tuple(vector.tolist())
@@ -216,7 +312,27 @@ class Odometry(object):
         filters: tuple[HighPassFilter, HighPassFilter, HighPassFilter] | None,
         dt: float,
     ) -> tuple[float, float, float]:
-        """Filter a 3-axis vector with one high-pass filter per axis."""  #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Apply per-axis first-order high-pass filters to a 3-element sensor vector.
+
+        Parameters
+        ----------
+        values : tuple, list, np.ndarray, or None
+            Raw 3-axis sensor reading.  Invalid or ``None`` inputs are treated
+            as ``(0, 0, 0)`` via :meth:`_to_vector3`.
+        filters : tuple of HighPassFilter or None
+            A 3-tuple of filters, one per axis, as returned by
+            :meth:`_build_vector_high_pass_filters`.  When ``None``, the input
+            vector is returned unchanged.
+        dt : float
+            Elapsed time in seconds since the previous call.  Passed to each
+            filter's ``update`` method.
+
+        Returns
+        -------
+        tuple of float
+            3-element tuple ``(x, y, z)`` of filtered values.
+        """
         vector = Odometry._to_vector3(values)
         if filters is None:
             return tuple(vector.tolist())
@@ -227,7 +343,22 @@ class Odometry(object):
         )
 
     def _update_rotation_matrix(self, quaternion: tuple | list | np.ndarray | None) -> None:
-        """Refresh the cached body-to-world rotation matrix when the quaternion is valid.""" #TODO update to NumPy style documentation for parameters and return value 
+        """
+        Refresh the cached body-to-world rotation matrix from a quaternion.
+
+        The internal matrix is only replaced when ``quaternion`` produces a
+        valid, finite 3×3 result from :func:`quaternion_rotation_matrix`.
+        Invalid or ``None`` inputs leave the existing matrix unchanged.
+
+        Parameters
+        ----------
+        quaternion : tuple, list, np.ndarray, or None
+            Quaternion in ``(w, x, y, z)`` order as returned by the BNO055.
+
+        Returns
+        -------
+        None
+        """
         if quaternion is None:
             return
 
@@ -333,7 +464,7 @@ class Odometry(object):
         
         
         self.__raw_gyro = self.__imu.get_raw_gyro()
-        self.__gyro = self._apply_vector_filters(
+        self.__gyro = self._apply_vector_moving_average_filters(
             self.__raw_gyro,
             self.__gyro_filters,
         )
@@ -342,7 +473,7 @@ class Odometry(object):
 
         self.__gravity = self.__imu.get_gravity_vector()
         self.__raw_body_acceleration = self.__imu.get_linear_acceleration()
-        body_acceleration = self._apply_vector_filters(
+        body_acceleration = self._apply_vector_moving_average_filters(
             self.__raw_body_acceleration,
             self.__linear_acceleration_filters,
         )
