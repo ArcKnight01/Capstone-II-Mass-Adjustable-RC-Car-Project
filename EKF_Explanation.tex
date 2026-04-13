@@ -57,6 +57,55 @@ The EKF alternates between:
     \item \textbf{update}: use sensors to correct the propagated state
 \end{itemize}
 
+\section{Software Architecture and the Role of Each File}
+
+Understanding \emph{which file does what} is key before reading the equations.
+
+\begin{description}
+    \item[\texttt{DynamicsModel.py}] owns the \textbf{process model}.
+        It implements the nonlinear continuous-time derivative
+        $\dot{\vect{x}} = f(\vect{x}, \vect{u})$ using a dynamic single-track
+        (bicycle) model derived from Newton's second law.  It also provides the
+        discrete approximation $f_d$ used by the EKF predict step, and computes
+        derived quantities (slip angles, tire forces, load transfer, handling
+        balance) that are useful for analysis and control.
+
+    \item[\texttt{ExtendedKalmanFilter.py}] owns the \textbf{filter state and
+        covariance}.  It calls \texttt{DynamicsModel} for the predict step and
+        applies sensor corrections in the update step.  It does not re-implement
+        any vehicle physics; all motion model math lives in
+        \texttt{DynamicsModel.py}.
+
+    \item[\texttt{config/vehicle.yaml}] provides vehicle geometry, mass,
+        inertia, and tire properties.  Both files load parameters from here so
+        there is one source of truth.
+\end{description}
+
+The separation means you can:
+\begin{itemize}
+    \item develop and tune the tire model in \texttt{DynamicsModel.py} without
+          touching the filter
+    \item swap in a different motion model (e.g.\ add throttle input) by
+          modifying only \texttt{DynamicsModel.py}
+    \item run the dynamics model standalone (e.g.\ for simulation or analysis)
+          without needing the filter
+\end{itemize}
+
+\subsection*{Why is the dynamics model needed at all?}
+
+In a linear Kalman filter you have a constant transition matrix $\mat{A}$
+(or $\mat{F}$ in discrete time) that says: ``if the state is $\vect{x}$ now,
+it will be $\mat{F}\vect{x}$ one step later.''  That only works when the state
+evolves linearly.
+
+For a vehicle the equations of motion are nonlinear -- in particular the
+position derivatives depend on $\sin\psi$ and $\cos\psi$, and the lateral
+dynamics couple velocity and yaw rate together.  The EKF handles this by
+\emph{linearising} $f$ at each step: it evaluates the full nonlinear model
+once to propagate the mean, and then takes the Jacobian $\mat{F}_k = \partial
+f_d / \partial \vect{x}$ to propagate the covariance.  The Jacobian is
+computed numerically using central differences.
+
 \section{Frames, Signs, and Config Values}
 
 From \texttt{config/frames.yaml} and the code:
@@ -279,7 +328,7 @@ and then wraps yaw:
 
 \section{What the F Matrix Is}
 
-The matrix $\mat{F}_k$ is the \textbf{state-transition Jacobian}. It is the local linearization of the discrete nonlinear process model:
+The matrix $\mat{F}_k$ is the \textbf{state-transition Jacobian}. It is the local linearisation of the discrete nonlinear process model:
 
 \begin{equation}
 \mat{F}_k = \left.\frac{\partial f_d}{\partial \vect{x}}\right|_{\vect{x}_{k-1}^+,\,\vect{u}_k}
@@ -288,7 +337,7 @@ The matrix $\mat{F}_k$ is the \textbf{state-transition Jacobian}. It is the loca
 In plain language:
 
 \begin{quote}
-If the current state estimate changes a little, how does the next predicted state change?
+If the current state estimate shifts a little in any direction, $\mat{F}_k$ tells the EKF how much the next \emph{predicted} state shifts in response.
 \end{quote}
 
 That is why $\mat{F}_k$ appears inside the covariance prediction:
@@ -296,6 +345,32 @@ That is why $\mat{F}_k$ appears inside the covariance prediction:
 \begin{equation}
 \mat{P}_k^- = \mat{F}_k \mat{P}_{k-1}^+ \mat{F}_k^T + \mat{Q}_k
 \end{equation}
+
+Think of $\mat{P}$ as an ellipsoid of uncertainty around the state estimate.
+$\mat{F}_k \mat{P} \mat{F}_k^T$ stretches and rotates that ellipsoid according
+to how the nonlinear dynamics would distort a small cloud of nearby states.
+$\mat{Q}_k$ then inflates it to account for unmodelled forces (tyre slip,
+ground roughness, wind) and slow IMU bias drift.
+
+\subsection*{Physical meaning of the non-zero Jacobian entries}
+
+From the analytic continuous-time Jacobian $\mat{A} = \partial f / \partial
+\vect{x}$ (Section~\ref{sec:analytic_jacobian}), the large off-diagonal
+entries are:
+
+\begin{itemize}
+    \item $A_{13},\,A_{23}$: uncertainty in yaw $\psi$ maps into uncertainty
+          in the \emph{direction} of position change -- if you are not sure which
+          way the car is pointing, you do not know which way it is moving in the
+          world frame.
+    \item $A_{34} = 1$: uncertainty in $r$ (yaw rate) feeds directly into
+          $\dot\psi$ -- obvious from $\dot\psi = r$.
+    \item $A_{45},\,A_{54}$: $v_x$ and $v_y$ couple through the centripetal
+          terms $v_y r$ and $-v_x r$.
+    \item $A_{43} = -1$: the accelerometer bias state directly reduces the
+          effective longitudinal acceleration -- uncertainty in the bias
+          translates to uncertainty in $\dot{v}_x$.
+\end{itemize}
 
 The repository computes $\mat{F}_k$ numerically with a central-difference Jacobian:
 
@@ -310,6 +385,7 @@ f_d(\vect{x} - \varepsilon\vect{e}_i,\vect{u})
 with $\varepsilon = 10^{-6}$.
 
 \subsection{Analytic continuous-time Jacobian for intuition}
+\label{sec:analytic_jacobian}
 
 Ignoring yaw wrapping and the low-speed clamp for a moment, and assuming $v_x > v_{x,\min}$, the continuous-time Jacobian $\mat{A} = \partial f / \partial \vect{x}$ has the sparse structure:
 
@@ -348,6 +424,55 @@ For forward Euler discretization:
 \end{equation}
 
 The code does not use this symbolic matrix directly, but it is a useful way to understand what the numerical Jacobian is approximating.
+
+\section{What the Q Matrix Represents}
+
+The process-noise covariance $\mat{Q}_k$ is the honest admission that the
+dynamics model is imperfect.  Every source of uncertainty that is \emph{not}
+captured by the equations in \texttt{DynamicsModel.py} must be accounted for
+somewhere, and that somewhere is $\mat{Q}$.
+
+For this project the sources include:
+\begin{itemize}
+    \item \textbf{Unmodelled tyre forces} -- the linear tyre model
+          $F = 2C\alpha$ is only accurate at small slip angles; at larger
+          angles (e.g.\ cornering hard) it saturates.
+    \item \textbf{Ground disturbances} -- bumps and surface variation cause
+          accelerations that do not appear in the planar model.
+    \item \textbf{Unmodelled aerodynamics} -- drag is currently set to zero.
+    \item \textbf{IMU bias drift} -- the bias states are modelled as constants
+          ($\dot{b} = 0$), but real biases drift slowly with temperature.
+          $\mat{Q}$ injects small uncertainty into the bias states each step
+          so the filter stays willing to let them change.
+\end{itemize}
+
+The current $\mat{Q}$ is diagonal (states are assumed to be uncorrelated in
+their noise):
+
+\begin{equation}
+\mat{Q}(\Delta t) =
+\diag(
+10^{-4},\;
+10^{-4},\;
+(\sigma_{\dot\psi}\Delta t)^2,\;
+(\sigma_v\Delta t)^2,\;
+(\sigma_v\Delta t)^2,\;
+(\sigma_{\dot\psi}\Delta t)^2,\;
+(\sigma_{b_a}\Delta t)^2,\;
+(\sigma_{b_g}\Delta t)^2)
+\end{equation}
+
+The position entries are fixed at $10^{-4}$ because position is integrated from
+velocity and its uncertainty is already captured through the dynamics.  The
+velocity and yaw entries scale with $\Delta t$ because larger steps accumulate
+more unmodelled disturbance.
+
+\textbf{Tuning note:} $\mat{Q}$ is currently set to engineering guesses.
+The proper way to tune it is to run the filter on logged data and compare the
+normalised innovation squared (NIS) -- how large the filter's own innovations
+are relative to what it predicted -- to a chi-squared distribution.  If NIS is
+consistently too large the filter is over-confident in the model and $\mat{Q}$
+should be increased.
 
 \section{Predict Step}
 
@@ -487,25 +612,48 @@ If GPS reports $e_{px}$ and $e_{py}$, the code uses:
 
 \subsection{GPS velocity}
 
-Because the state stores body-frame velocity but GPS reports world-frame velocity:
+The GPS reports ground speed and course-over-ground in the world (ENU) frame.
+The state stores velocity in the body frame, so the measurement model applies
+the yaw rotation:
 
 \begin{equation}
 h_{\text{gps,vel}}(\vect{x}) =
+\mat{R}(\psi)
+\begin{bmatrix}
+v_x \\ v_y
+\end{bmatrix}
+=
 \begin{bmatrix}
 v_x\cos\psi - v_y\sin\psi \\
 v_x\sin\psi + v_y\cos\psi
 \end{bmatrix}
 \end{equation}
 
-The code computes the Jacobian numerically, but the analytic form is:
+Because $h_{\text{gps,vel}}$ depends nonlinearly on $\psi$, $v_x$, and $v_y$,
+the EKF needs its Jacobian $\mat{H}_k$.  The code uses the \emph{analytic}
+form (see \texttt{h\_gps\_velocity\_jacobian\_2d} in
+\texttt{ExtendedKalmanFilter.py}), derived by differentiating each output with
+respect to every state:
+
+\begin{align}
+\frac{\partial}{\partial\psi}(v_x\cos\psi - v_y\sin\psi) &= -v_x\sin\psi - v_y\cos\psi \\
+\frac{\partial}{\partial v_x}(v_x\cos\psi - v_y\sin\psi) &= \cos\psi \\
+\frac{\partial}{\partial v_y}(v_x\cos\psi - v_y\sin\psi) &= -\sin\psi
+\end{align}
+
+and similarly for the second row.  All other partial derivatives are zero, giving:
 
 \begin{equation}
 \mat{H}_{\text{gps,vel}} =
 \begin{bmatrix}
 0 & 0 & -v_x\sin\psi - v_y\cos\psi & \cos\psi & -\sin\psi & 0 & 0 & 0 \\
-0 & 0 & v_x\cos\psi - v_y\sin\psi & \sin\psi & \cos\psi & 0 & 0 & 0
+0 & 0 & \phantom{-}v_x\cos\psi - v_y\sin\psi & \sin\psi & \cos\psi & 0 & 0 & 0
 \end{bmatrix}
 \end{equation}
+
+Providing this analytically saves the 16 extra process-model evaluations that a
+numerical central-difference Jacobian would require (8 state dimensions
+$\times$ 2 perturbation directions).
 
 The default covariance is:
 

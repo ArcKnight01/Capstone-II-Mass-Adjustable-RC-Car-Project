@@ -9,72 +9,87 @@ import numpy as np
 from ConfigLoader import get_section, load_config_bundle, read_nested
 
 """
-Dynamics model pseudocode scaffold for the Traxxas Rustler 4x4 project.
+Dynamic single-track (bicycle) vehicle model for the Traxxas Rustler 4x4 RC car.
 
-Primary reference:
-- MathWorks, "Modeling a Vehicle Dynamics System"
+This module is the *process model* side of the EKF.  It implements the
+continuous-time nonlinear derivative
+
+    x_dot = f(x, u)
+
+and a forward-Euler discrete approximation used by the EKF predict step:
+
+    x_k^- ~= x_{k-1}^+ + f(x_{k-1}^+, u_k) * dt
+
+The EKF then linearises f around the current estimate to get the
+state-transition Jacobian F_k, which it uses to propagate covariance:
+
+    P_k^- = F_k P_{k-1}^+ F_k^T + Q_k
+
+Primary modelling reference:
+  MathWorks, "Modeling a Vehicle Dynamics System"
   https://www.mathworks.com/help/ident/ug/modeling-a-vehicle-dynamics-system.html
 
-Additional local context used to shape this scaffold:
-- RC_vehicle_dynamics_tables_summary.md
-- RC_vehicle_dynamics_tables.xlsx / Equations.xlsx derived notes
-- project frame convention: +X forward, +Y left, +Z up
+Frame conventions (project-wide):
+  - Body frame: +X forward, +Y left, +Z up
+  - World frame: local ENU  (x = East, y = North)
+  - Yaw psi is radians, counter-clockwise from East
 
-This file is intentionally pseudocode-first. The goal is to define what the
-model should represent, what signals it needs, and what downstream quantities it
-should produce before we harden the equations into production code.
+EKF state vector used by derivative_from_ekf_state / predict_ekf_state:
 
-What we want to observe or estimate:
-- pitch
-- yaw
-- roll
-- braking force
-- motor / torque input
-- speed
-- acceleration
+    x = [p_e, p_n, psi, phi, theta, v_x, v_y, r, b_ax, b_ay, b_gz]^T
+         0    1    2    3    4      5    6    7   8     9     10
 
-What we want to use the model for:
-- oversteer detection
-- understeer detection
-- slip-angle estimation
-- load-transfer estimation
-- optimal steering-angle estimation
+    p_e, p_n  -- local East/North position (m)
+    psi       -- yaw angle (rad)
+    phi       -- roll angle (rad); random-walk in predict, corrected by IMU
+    theta     -- pitch angle (rad); random-walk in predict, corrected by IMU
+    v_x, v_y  -- body-frame longitudinal and lateral velocity (m/s)
+    r         -- yaw rate (rad/s)
+    b_ax      -- IMU longitudinal accelerometer bias (m/s^2)
+    b_ay      -- IMU lateral accelerometer bias (m/s^2)
+    b_gz      -- IMU gyro z-axis bias (rad/s)
 
-Core modeling note:
-- The MathWorks reference is centered on dynamic states v_x, v_y, and yaw rate r.
-- For this RC car project, that should be the backbone of the planar model.
-- Roll and pitch should initially be treated as measured / derived attitude
-  channels from the IMU and then connected into load-transfer logic.
+Control input vector:
 
-Kalman-filter role:
-- This file is the process / motion model side of the EKF.
-- In the notation used by Roger Labbe's "Kalman and Bayesian Filters in Python":
+    u = [a_x_meas, delta_logged]^T
 
-      x_k = f(x_{k-1}, u_k) + w_k
+    a_x_meas     -- IMU longitudinal acceleration including bias (m/s^2)
+    delta_logged -- steering angle from the RC receiver (rad, sign per convention)
 
-  this file provides the nonlinear function f(x, u), or more precisely the
-  continuous-time derivative x_dot = f(x, u) and the first-order discrete
-  approximation:
+Planar dynamics (single-track / bicycle model):
 
-      x_k ~= x_{k-1} + f(x_{k-1}, u_k) * dt
+    dot_p_e  = v_x*cos(psi) - v_y*sin(psi)
+    dot_p_n  = v_x*sin(psi) + v_y*cos(psi)
+    dot_psi  = r
+    dot_v_x  = (a_x_meas - b_ax) + v_y*r - C_d*v_x*|v_x|
+    dot_v_y  = -v_x*r + (F_yf*cos(delta) + F_yr) / m
+    dot_r    = (a*F_yf*cos(delta) - b*F_yr) / I_z
+    dot_b_ax = 0   (random-walk bias; Q injects drift uncertainty)
+    dot_b_gz = 0
 
-- The sensor model lives in the EKF measurement functions h(x), while this file
-  explains how the vehicle state should evolve before sensor corrections.
+Linear tire forces (first-pass; can be replaced with a nonlinear model later):
+
+    F_yf = 2*C_f*alpha_f
+    F_yr = 2*C_r*alpha_r
+
+Small-angle slip angles (linearised about zero sideslip):
+
+    alpha_f = delta_math - (v_y + a*r) / v_x_safe
+    alpha_r =            - (v_y - b*r) / v_x_safe
+
+where delta_math is the steering angle in the standard body-XY sign convention
+(positive = left turn) and v_x_safe clamps |v_x| >= min_speed to avoid
+division by zero at a standstill.
+
+Vehicle parameters (from config/vehicle.yaml):
+    m    -- mass (kg)
+    a    -- front CG distance (m)
+    b    -- rear CG distance (m)
+    C_f  -- front cornering stiffness (N/rad)
+    C_r  -- rear cornering stiffness (N/rad)
+    I_z  -- yaw inertia (kg*m^2)
+    C_d  -- longitudinal drag coefficient (currently 0)
 """
-
-
-@dataclass(frozen=True)
-class DynamicsStateDefinition:
-    """Named state channels for the first-pass dynamics model."""
-
-    position_east_m: float = 0.0
-    position_north_m: float = 0.0
-    yaw_rad: float = 0.0
-    longitudinal_velocity_mps: float = 0.0
-    lateral_velocity_mps: float = 0.0
-    yaw_rate_radps: float = 0.0
-    roll_rad: float = 0.0
-    pitch_rad: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -191,23 +206,6 @@ class VehicleParameterDefinition:
 
 
 @dataclass(frozen=True)
-class InputSignalDefinition:
-    """Signals we either already have or may want to add."""
-
-    steering_angle_rad: float = 0.0
-    throttle_command: float = 0.0
-    brake_command: float = 0.0
-    motor_torque_estimate_nm: float = 0.0
-    front_left_wheel_slip: float = 0.0
-    front_right_wheel_slip: float = 0.0
-    rear_left_wheel_slip: float = 0.0
-    rear_right_wheel_slip: float = 0.0
-    imu_longitudinal_accel_mps2: float = 0.0
-    imu_lateral_accel_mps2: float = 0.0
-    imu_yaw_rate_radps: float = 0.0
-
-
-@dataclass(frozen=True)
 class DynamicsRuntimeConfig:
     """Dynamic-model runtime settings loaded from YAML."""
 
@@ -313,221 +311,6 @@ def body_velocity_to_world_velocity(vx_body_mps: float, vy_body_mps: float, yaw_
     )
 
 
-STATE_VECTOR_PLAN = [
-    "p_e",
-    "p_n",
-    "psi",
-    "v_x",
-    "v_y",
-    "r",
-    "roll",
-    "pitch",
-]
-
-INPUT_VECTOR_PLAN = [
-    "steering_angle",
-    "throttle_or_motor_input",
-    "brake_input",
-    "optional_wheel_slips",
-    "imu_longitudinal_accel",
-    "imu_lateral_accel",
-]
-
-OUTPUT_VECTOR_PLAN = [
-    "speed",
-    "longitudinal_acceleration",
-    "lateral_acceleration",
-    "yaw_rate",
-    "front_slip_angle",
-    "rear_slip_angle",
-    "lateral_load_transfer",
-    "longitudinal_load_transfer",
-    "understeer_gradient",
-    "optimal_steering_angle",
-]
-
-
-DYNAMICS_MODEL_PSEUDOCODE = """
-1. Load vehicle parameters
-   Inputs needed from config / measurement:
-   - mass m
-   - wheelbase l
-   - front CG distance a
-   - rear CG distance b
-   - track width t
-   - CG height h
-   - yaw inertia Iz
-   - front cornering stiffness Cf
-   - rear cornering stiffness Cr
-   - drag coefficient Cd_long
-
-2. Gather sensor / control inputs for the current timestep
-   Required now:
-   - steering angle delta
-   - IMU yaw rate r_meas
-   - IMU longitudinal acceleration a_x_meas
-   - IMU lateral acceleration a_y_meas
-   - GPS speed or fused speed estimate
-   - yaw estimate from IMU/GPS fusion
-
-   Optional but very useful later:
-   - throttle / ESC command
-   - brake command
-   - motor torque estimate
-   - wheel speeds or wheel slips
-
-3. Define state vector
-   x = [
-       p_e,    # local East position
-       p_n,    # local North position
-       psi,    # yaw angle
-       v_x,    # body longitudinal velocity
-       v_y,    # body lateral velocity
-       r,      # yaw rate
-       phi,    # roll angle
-       theta,  # pitch angle
-   ]
-
-4. Compute body-frame kinematics
-   speed = sqrt(v_x^2 + v_y^2)
-   world_velocity = R_body_to_world(psi) @ [v_x, v_y]
-   p_e_dot = world_velocity_x
-   p_n_dot = world_velocity_y
-   psi_dot = r
-
-5. Compute tire slip angles
-   If v_x is too small:
-       clamp v_x to a minimum safe value to avoid division by zero
-
-   front_slip_angle alpha_f =
-       delta - atan((v_y + a*r) / v_x)
-
-   rear_slip_angle alpha_r =
-       -atan((v_y - b*r) / v_x)
-
-   Small-angle linearized form for fast model / estimator use:
-       alpha_f ~= delta - (v_y + a*r)/v_x
-       alpha_r ~= -(v_y - b*r)/v_x
-
-6. Compute lateral tire forces
-   First-pass linear tire model:
-       F_yf = 2 * Cf * alpha_f
-       F_yr = 2 * Cr * alpha_r
-
-   Later upgrade path:
-   - saturation / nonlinear tire model
-   - separate left/right tire loads
-   - surface-dependent stiffness
-
-7. Compute longitudinal force model
-   Option A: if throttle / motor input is not available yet
-       approximate longitudinal excitation using IMU longitudinal acceleration
-       and treat motor/brake force as an unknown effective input
-
-   Option B: if throttle or motor torque is available
-       map command -> drive torque -> wheel force
-       subtract drag and rolling resistance
-
-   Option C: if wheel speed data becomes available
-       compute longitudinal slip and use a better tire-force model
-
-8. Propagate planar dynamics
-   Dynamic-state backbone inspired by the MathWorks reference:
-       v_x_dot = v_y*r + (sum longitudinal forces)/m - drag_term
-       v_y_dot = -v_x*r + (front lateral contribution + rear lateral contribution)/m
-       r_dot   = (front yaw moment - rear yaw moment) / Iz
-
-   First-pass single-track form:
-       v_x_dot = a_x_input + v_y*r - drag_term
-       v_y_dot = -v_x*r + (F_yf*cos(delta) + F_yr)/m
-       r_dot   = (a*F_yf*cos(delta) - b*F_yr)/Iz
-
-9. Attach roll and pitch channels
-   Initial use:
-   - take roll and pitch from IMU fused orientation
-   - do not fully model suspension dynamics yet
-
-   Later use:
-   - create roll and pitch dynamic states driven by lateral and longitudinal acceleration
-   - connect them to load transfer and tire normal loads
-
-10. Estimate load transfer
-   Longitudinal load transfer:
-       delta_W_x = W * (A_x * h / l)
-
-   Lateral load transfer:
-       delta_W_y = W * (A_y * h / t)
-
-   Use these to estimate:
-   - front vs rear axle load changes under braking / acceleration
-   - left vs right load changes in cornering
-   - when inside wheels may begin to unload
-
-11. Estimate handling balance
-   Understeer / oversteer logic can start from:
-   - compare demanded steering delta to kinematic/Ackermann steering for the same turn radius
-   - compare measured yaw response vs expected yaw response
-   - compare front and rear slip-angle trends
-
-   Heuristic:
-   - if |alpha_f| > |alpha_r| by a meaningful margin -> understeer tendency
-   - if |alpha_r| > |alpha_f| by a meaningful margin -> oversteer tendency
-
-12. Estimate optimal steering angle
-   First pass:
-   - compute kinematic / Ackermann steering for desired turn radius:
-         delta_ack ~= atan(l / R)
-
-   Dynamic correction:
-   - increase or decrease delta based on speed, lateral acceleration, and understeer gradient
-
-   Candidate output:
-       delta_optimal = delta_ack + delta_dynamic_correction
-
-13. Output quantities for controller / logger / visualization
-   Save or return:
-   - speed
-   - a_x, a_y
-   - yaw rate
-   - front/rear slip angles
-   - lateral and longitudinal load transfer
-   - understeer / oversteer indicator
-   - recommended steering angle
-
-14. Validation workflow
-   Before trusting the model:
-   - verify steering sign convention
-   - verify yaw sign convention
-   - verify v_x remains positive in straight-line runs
-   - compare predicted yaw rate against IMU gyro z
-   - compare predicted lateral acceleration against IMU lateral accel
-   - compare estimated turn radius against GPS track curvature
-"""
-
-
-MISSING_INFORMATION_CHECKLIST = [
-    "Measured wheelbase and track width for the current Rustler setup",
-    "CG location relative to front and rear axles for the as-run mass configuration",
-    "CG height used for load-transfer calculations",
-    "Yaw inertia estimate or measurement",
-    "Front and rear cornering stiffness estimates for the current tire/surface setup",
-    "Whether steering angle is true road-wheel angle or only servo command angle",
-    "Whether throttle / ESC command can be logged reliably",
-    "Whether brake command can be measured separately from throttle",
-    "Whether wheel speed or motor RPM sensing will be added later",
-    "Trusted sign conventions for steering, yaw, and lateral acceleration",
-]
-
-
-IMPLEMENTATION_ORDER = [
-    "Phase 1: Build a planar dynamic single-track model with v_x, v_y, r, psi, p_e, p_n",
-    "Phase 2: Feed roll and pitch from IMU measurements into load-transfer estimation",
-    "Phase 3: Add throttle / brake or motor-force input when available",
-    "Phase 4: Add wheel-speed-based longitudinal slip if sensors are added",
-    "Phase 5: Tune cornering stiffness and yaw inertia from logged test data",
-]
-
-
 class DynamicsModel:
     """
     Placeholder class describing how the production dynamics model should look.
@@ -599,22 +382,55 @@ class DynamicsModel:
         steering_sign_convention: str | None = None,
     ) -> dict[str, float]:
         """
-        Compute front and rear slip angles for the first-pass dynamic single-track model.
+        Compute front and rear tire slip angles for the single-track model.
+
+        The slip angle of a tire is the angle between the direction the tire is
+        *pointing* and the direction it is actually *moving*.  A non-zero slip
+        angle generates lateral (cornering) force — the fundamental mechanism
+        behind steering response and handling balance.
+
+        Using the small-angle linearisation (adequate when sideslip is small):
+
+            alpha_f = delta_math - (v_y + a*r) / v_x
+            alpha_r =            - (v_y - b*r) / v_x
+
+        The numerator (v_y + a*r) is the lateral velocity of the *front axle*
+        in the body frame — the sum of the CG lateral velocity and the
+        contribution from rotation (a * yaw_rate).  Dividing by v_x converts
+        it to an angle.  The front steering angle delta_math then represents
+        how much the front wheel is turned away from that travel direction.
+
+        The rear axle has no steering, so alpha_r is purely the sideslip at
+        the rear (v_y - b*r), negated by sign convention.
+
+        v_x_safe clamps the denominator away from zero so the equations stay
+        finite at a standstill.  The sign of v_x is preserved so that reversing
+        produces sensible (negative-vx) slip angles.
         """
         sign_convention = steering_sign_convention or self.runtime.steering_sign_convention
         v_x = read_float(state, "v_x_body_mps", "longitudinal_velocity_mps", "v_x", default=0.0)
         v_y = read_float(state, "v_y_body_mps", "lateral_velocity_mps", "v_y", default=0.0)
         yaw_rate = read_float(state, "yaw_rate_radps", "r", default=0.0)
         steering_logged_rad = read_float(inputs, "steering_angle_rad", default=0.0)
+
+        # Convert the logged steering sign into the standard body-XY math convention
+        # (positive delta_math = left turn = positive yaw direction).
         steering_math_rad = steering_measurement_to_math_angle_rad(steering_logged_rad, sign_convention)
+
+        # Clamp |v_x| to avoid division by zero; preserve the sign so reverse works.
         v_x_safe = math.copysign(
             max(abs(v_x), self.vehicle_parameters.min_longitudinal_speed_mps),
             v_x if v_x != 0.0 else 1.0,
         )
 
+        # Front slip: steer angle minus the angle at which the front axle is
+        # actually moving laterally (= (v_y + a*r) / v_x in small-angle form).
         alpha_f = steering_math_rad - (
             v_y + self.vehicle_parameters.front_cg_distance_m * yaw_rate
         ) / v_x_safe
+
+        # Rear slip: purely from lateral motion of the rear axle.
+        # The rear wheels point straight ahead, so there is no steering term.
         alpha_r = -(
             v_y - self.vehicle_parameters.rear_cg_distance_m * yaw_rate
         ) / v_x_safe
@@ -650,21 +466,48 @@ class DynamicsModel:
         steering_sign_convention: str | None = None,
     ) -> dict[str, float]:
         """
-        Compute the continuous-time motion model x_dot = f(x, u).
+        Evaluate the continuous-time nonlinear derivative  x_dot = f(x, u).
 
-        State used here:
-            x = [p_e, p_n, psi, v_x, v_y, r, ...]^T
+        This is the core of the process model.  Every term comes from Newton's
+        second law applied to the single-track vehicle:
 
-        Inputs used here:
-            u = [delta, a_x_meas, ...]^T
+        Position kinematics — rotate body-frame velocity into world frame:
+            dot_p_e = v_x*cos(psi) - v_y*sin(psi)
+            dot_p_n = v_x*sin(psi) + v_y*cos(psi)
+            dot_psi = r
 
-        Interaction between the dynamics model and the sensor model:
-        - The IMU longitudinal acceleration is treated as a known input during
-          prediction.
-        - Steering angle determines front tire slip angle and therefore lateral
-          tire force.
-        - GPS and IMU sensor models do not appear here; they correct this
-          predicted motion later during the EKF update step.
+        Longitudinal dynamics (Newton F=ma along body X):
+            dot_v_x = a_x_corr + v_y*r - C_d*v_x*|v_x|
+
+            - a_x_corr = a_x_meas - b_ax  (IMU reading minus estimated bias)
+            - v_y*r is the centripetal acceleration coupling: when the car
+              rotates, lateral velocity spills into the longitudinal direction
+            - C_d*v_x*|v_x| is aerodynamic drag (currently zero in config)
+
+        Lateral dynamics (Newton F=ma along body Y):
+            dot_v_y = -v_x*r + (F_yf*cos(delta) + F_yr) / m
+
+            - -v_x*r is the centripetal term in the rotating body frame
+              (equal and opposite to v_y*r above but for the lateral axis)
+            - F_yf*cos(delta) projects the front tire force along body Y
+              (small delta means cos ≈ 1, so this is approximately just F_yf)
+            - F_yr is the rear lateral tire force
+
+        Yaw dynamics (moment equation about the vertical CG axis):
+            dot_r = (a*F_yf*cos(delta) - b*F_yr) / I_z
+
+            - a * F_yf creates a yaw moment that turns the car in the same
+              direction as the front wheels are steered (stabilising under
+              normal cornering)
+            - b * F_yr opposes that moment (rear grip resists yaw)
+            - The ratio of these determines oversteer vs understeer tendency
+
+        Bias states are modelled as random-walk constants (dot = 0).  The
+        process-noise matrix Q tells the EKF how fast they are allowed to drift.
+
+        Note: GPS and IMU sensor corrections do *not* appear here.  This is the
+        pure physics prediction.  The EKF update step applies sensor corrections
+        on top of whatever this function predicts.
         """
         yaw_rad = read_float(state, "yaw_rad", "psi", default=0.0)
         v_x = read_float(state, "v_x_body_mps", "longitudinal_velocity_mps", "v_x", default=0.0)
@@ -684,30 +527,45 @@ class DynamicsModel:
         yaw_inertia_kgm2 = max(self.vehicle_parameters.yaw_inertia_kgm2, 1e-9)
         longitudinal_drag = self.vehicle_parameters.longitudinal_drag_coefficient
         accel_body_x_mps2 = read_float(inputs, "imu_longitudinal_accel_mps2", "a_x_input_mps2", default=0.0)
+
+        # Subtract the estimated accelerometer bias before using the IMU reading
+        # as a forcing input.  The bias state is corrected by the EKF update step.
         corrected_accel_body_x_mps2 = accel_body_x_mps2 - accel_bias_x
 
+        # Rotate body velocity into world frame for the position derivatives.
         world_velocity = body_velocity_to_world_velocity(v_x, v_y, yaw_rad)
         front_lateral_force = tire_forces["front_lateral_force_n"]
         rear_lateral_force = tire_forces["rear_lateral_force_n"]
 
+        # cos(delta) projects front tire force onto body-Y and creates the
+        # yaw moment arm.  For typical RC car steering (|delta| < 60 deg),
+        # cos(delta) is between 0.5 and 1.0, so the approximation cos ≈ 1 is
+        # acceptable at small angles but not at full lock.
+        cos_delta = math.cos(steering_math_rad)
+
+        # dot_v_x: longitudinal accel + centripetal coupling - drag
         dot_v_x = corrected_accel_body_x_mps2 + v_y * yaw_rate - longitudinal_drag * v_x * abs(v_x)
-        dot_v_y = -v_x * yaw_rate + (front_lateral_force * math.cos(steering_math_rad) + rear_lateral_force) / mass_kg
+
+        # dot_v_y: centripetal term + net lateral tire force / mass
+        dot_v_y = -v_x * yaw_rate + (front_lateral_force * cos_delta + rear_lateral_force) / mass_kg
+
+        # dot_r: net yaw torque / yaw inertia
         dot_yaw_rate = (
-            self.vehicle_parameters.front_cg_distance_m * front_lateral_force * math.cos(steering_math_rad)
+            self.vehicle_parameters.front_cg_distance_m * front_lateral_force * cos_delta
             - self.vehicle_parameters.rear_cg_distance_m * rear_lateral_force
         ) / yaw_inertia_kgm2
 
         return {
             "p_e_m": world_velocity[0],
             "p_n_m": world_velocity[1],
-            "yaw_rad": yaw_rate,
+            "yaw_rad": yaw_rate,        # dot_psi = r
             "v_x_body_mps": dot_v_x,
             "v_y_body_mps": dot_v_y,
             "yaw_rate_radps": dot_yaw_rate,
-            "roll_rad": 0.0,
-            "pitch_rad": 0.0,
-            "accel_bias_x_mps2": 0.0,
-            "gyro_bias_z_radps": 0.0,
+            "roll_rad": 0.0,            # placeholder — driven by IMU for now
+            "pitch_rad": 0.0,           # placeholder — driven by IMU for now
+            "accel_bias_x_mps2": 0.0,  # random walk; Q handles uncertainty
+            "gyro_bias_z_radps": 0.0,  # random walk; Q handles uncertainty
         }
 
     def compute_body_accelerations(
@@ -818,25 +676,32 @@ class DynamicsModel:
         This is the bridge from the named vehicle-dynamics state to the EKF's
         packed matrix/vector form:
 
-            x = [p_e, p_n, psi, v_x, v_y, r, b_ax, b_gz]^T
+            x = [p_e, p_n, psi, phi, theta, v_x, v_y, r, b_ax, b_ay, b_gz]^T
+            0    1    2    3    4     5      6    7   8    9     10
+
+        phi (roll) and theta (pitch) are currently measured by the BNO055 and
+        injected directly through update_roll / update_pitch; their derivatives
+        are zero in the predict step (random-walk model — uncertainty grows via Q).
+        b_ay is likewise a random-walk bias; its derivative is zero.
 
         The EKF needs this vector form so it can build Jacobians and propagate
         covariance, but the underlying equations still come from the vehicle
         dynamics model.
         """
         candidate_state = np.asarray(state, dtype=float).reshape(-1)
-        if candidate_state.shape[0] != 8:
-            raise ValueError(f"Expected EKF state size 8, got {candidate_state.shape[0]}.")
+        if candidate_state.shape[0] != 11:
+            raise ValueError(f"Expected EKF state size 11, got {candidate_state.shape[0]}.")
 
         state_dict = {
             "p_e_m": candidate_state[0],
             "p_n_m": candidate_state[1],
             "yaw_rad": candidate_state[2],
-            "v_x_body_mps": candidate_state[3],
-            "v_y_body_mps": candidate_state[4],
-            "yaw_rate_radps": candidate_state[5],
-            "accel_bias_x_mps2": candidate_state[6],
-            "gyro_bias_z_radps": candidate_state[7],
+            # phi (index 3) and theta (index 4) are not inputs to the planar model
+            "v_x_body_mps": candidate_state[5],
+            "v_y_body_mps": candidate_state[6],
+            "yaw_rate_radps": candidate_state[7],
+            "accel_bias_x_mps2": candidate_state[8],
+            "gyro_bias_z_radps": candidate_state[10],
         }
         input_dict = {
             "imu_longitudinal_accel_mps2": float(accel_body_x_mps2),
@@ -850,14 +715,17 @@ class DynamicsModel:
 
         return np.array(
             [
-                derivative["p_e_m"],
-                derivative["p_n_m"],
-                derivative["yaw_rad"],
-                derivative["v_x_body_mps"],
-                derivative["v_y_body_mps"],
-                derivative["yaw_rate_radps"],
-                derivative["accel_bias_x_mps2"],
-                derivative["gyro_bias_z_radps"],
+                derivative["p_e_m"],           # 0  dot_p_e
+                derivative["p_n_m"],           # 1  dot_p_n
+                derivative["yaw_rad"],         # 2  dot_psi
+                0.0,                           # 3  dot_phi   -- random walk, driven by IMU
+                0.0,                           # 4  dot_theta -- random walk, driven by IMU
+                derivative["v_x_body_mps"],    # 5  dot_v_x
+                derivative["v_y_body_mps"],    # 6  dot_v_y
+                derivative["yaw_rate_radps"],  # 7  dot_r
+                derivative["accel_bias_x_mps2"], # 8 dot_b_ax  -- random walk
+                0.0,                           # 9  dot_b_ay  -- random walk
+                derivative["gyro_bias_z_radps"], # 10 dot_b_gz -- random walk
             ],
             dtype=float,
         )
@@ -956,11 +824,18 @@ class DynamicsModel:
 
 if __name__ == "__main__":
     model = DynamicsModel.from_config_bundle()
-    print("Dynamics model pseudocode scaffold")
-    print("State plan:", STATE_VECTOR_PLAN)
-    print("Input plan:", INPUT_VECTOR_PLAN)
-    print("Output plan:", OUTPUT_VECTOR_PLAN)
-    print("Config-driven summary:", model.describe_configuration())
-    print("\nImplementation order:")
-    for item in IMPLEMENTATION_ORDER:
-        print(f"  - {item}")
+    print("DynamicsModel loaded from config")
+    print("Vehicle parameters:", model.describe_configuration()["vehicle_parameters"])
+    print("Steering convention:", model.describe_configuration()["steering_sign_convention"])
+
+    # Quick smoke test: step the model from rest with a small steering input.
+    import numpy as np
+    x0 = np.zeros(8, dtype=float)
+    x0[3] = 2.0  # start at 2 m/s longitudinal
+    x1 = model.predict_ekf_state(
+        state=x0,
+        accel_body_x_mps2=0.5,
+        steering_angle_rad=0.1,
+        dt=0.05,
+    )
+    print("State after one 50 ms step:", x1)

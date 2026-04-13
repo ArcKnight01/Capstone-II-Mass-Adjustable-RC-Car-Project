@@ -1,7 +1,10 @@
 class MovingAverageFilter:
+    """A simple moving average filter for smoothing data."""
+
     __slots__ = ("window_size", "_buffer", "_count", "_index", "_sum")
 
     def __init__(self, window_size):
+        """Initialize the moving average filter with a specified window size."""
         window_size = int(window_size)
         if window_size <= 0:
             raise ValueError("window_size must be positive")
@@ -13,6 +16,7 @@ class MovingAverageFilter:
         self._sum = 0.0
 
     def update(self, new_value):
+        """Update the filter with a new value and return the current moving average."""
         value = float(new_value)
         buffer = self._buffer
         index = self._index
@@ -44,6 +48,7 @@ class MovingAverageFilter:
         return total / window_size
 
     def moving_average(self, new_value):
+        """Convenience method to update the filter and get the current moving average."""
         return self.update(new_value)
 
     @property
@@ -55,6 +60,7 @@ class MovingAverageFilter:
 
 
 class LowPassFilter:
+    """A simple low-pass filter for smoothing data."""
     __slots__ = ("cutoff_hz", "_value", "_initialized")
 
     def __init__(self, cutoff_hz):

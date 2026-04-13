@@ -9,82 +9,98 @@ import numpy as np
 from ConfigLoader import get_section, load_config_bundle, read_nested
 from DynamicsModel import DynamicsModel, VehicleParameterDefinition
 
+#TODO possibly integrate WelfordsOnlineAlgorithm.py for online estimation of mean, variance, and standard deviation of sensor noise, which could be used to adaptively tune the EKF measurement noise covariance R based on recent sensor performance.
+
 """
-Extended Kalman filter starter for the RC car project.
+Extended Kalman Filter (EKF) for the RC car navigation project.
 
-This version replaces the earlier kinematic/bicycle-style propagation with a
-dynamic planar vehicle model that is closer to the MathWorks reference example:
-https://www.mathworks.com/help/ident/ug/modeling-a-vehicle-dynamics-system.html
+Architecture overview
+---------------------
+DynamicsModel (DynamicsModel.py)
+    Owns the nonlinear process model  f(x, u)  and its discrete form  f_d.
+    It is intentionally separate so the vehicle dynamics can be developed,
+    tuned, and tested independently from the filter machinery.
 
-The MathWorks example uses longitudinal velocity, lateral velocity, and yaw
-rate as the core vehicle-dynamics states. That is a better conceptual match for
-your project than a purely kinematic steering model.
+ExtendedKalmanFilter (this file)
+    Owns the filter state x and covariance P.
+    It calls DynamicsModel for predict and applies sensor corrections in update.
 
-Reference / attribution note:
-- The overall EKF class lifecycle here is still inspired by the public
-  Janudis/Extended-Kalman-Filter-GPS_IMU repository and the paper cited in its
-  README, but the actual propagation model below is adapted toward the
-  higher-fidelity dynamic-vehicle structure discussed in the MathWorks example.
+The nonlinear EKF equations:
 
-Project frame conventions:
-- Body frame: +X forward, +Y left, +Z up
-- Local world frame: x = East, y = North
-- Yaw psi is radians, counter-clockwise from East
+    Process model:     x_k = f(x_{k-1}, u_k) + w_k     w ~ N(0, Q)
+    Measurement model: z_k = h(x_k)          + v_k     v ~ N(0, R)
 
-Steering sign note:
-- The project steering sign may still be uncertain, so it remains configurable.
-- In the body frame above, positive planar math rotation means left.
+Predict step  (run every loop iteration, driven by IMU + steering):
 
-Notation used in the comments below follows the EKF presentation style used in
-Roger Labbe's "Kalman and Bayesian Filters in Python":
-- repo README:
-  https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/README.md
-- EKF chapter notebook:
-  https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/11-Extended-Kalman-Filters.ipynb
-- nonlinear-filter design appendix:
-  https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/Appendix-G-Designing-Nonlinear-Kalman-Filters.ipynb
+    x^-_k = f_d(x^+_{k-1}, u_k)              -- forward-Euler via DynamicsModel
+    F_k   = d f_d / d x                       -- Jacobian (numerical central diff)
+    P^-_k = F_k P^+_{k-1} F_k^T + Q_k        -- covariance prediction
 
-For this project the nonlinear EKF is organized as:
+    F_k maps how a small perturbation in the current state estimate propagates
+    through the nonlinear dynamics into the next predicted state.  It plays the
+    same role as the state-transition matrix A in a linear Kalman filter.
 
-    x_k   = f(x_{k-1}, u_k) + w_k
-    z_k   = h(x_k) + v_k
+Update step  (run whenever a sensor measurement arrives):
 
-where
-- x is the state vector we want to estimate
-- u is the known input applied during the predict step
-- z is a sensor measurement used in the update step
-- w ~ N(0, Q) is process noise
-- v ~ N(0, R) is measurement noise
-
-Predict step:
-
-    x^-_k = f(x^+_{k-1}, u_k)
-    F_k   = d f / d x |_{x^+_{k-1}, u_k}
-    P^-_k = F_k P^+_{k-1} F_k^T + Q_k
-
-Update step:
-
-    y_k   = z_k - h(x^-_k)               # innovation / residual
-    H_k   = d h / d x |_{x^-_k}
-    S_k   = H_k P^-_k H_k^T + R_k        # innovation covariance
-    K_k   = P^-_k H_k^T S_k^{-1}         # Kalman gain
+    y_k   = z_k - h(x^-_k)                   -- innovation (residual)
+    H_k   = d h / d x |_{x^-_k}              -- measurement Jacobian
+    S_k   = H_k P^-_k H_k^T + R_k            -- innovation covariance
+    K_k   = P^-_k H_k^T S_k^{-1}             -- Kalman gain
     x^+_k = x^-_k + K_k y_k
     P^+_k = (I - K_k H_k) P^-_k (I - K_k H_k)^T + K_k R_k K_k^T
 
-The last covariance equation is the Joseph form. It is a bit more expensive
-than the minimal textbook form, but it is numerically safer.
+    The last line is the Joseph form.  It is slightly more expensive than the
+    minimal P^+ = (I - K H) P^- but stays symmetric and positive-definite under
+    floating-point rounding, which matters for long runs.
+
+    Conceptually: the Kalman gain K_k decides how much to trust the sensor (z_k)
+    versus the model prediction (x^-_k).  If R is small (sensor trusted) K is
+    large and the state is pulled toward the measurement.  If P^- is small
+    (model trusted) K is small and the measurement has little influence.
+
+State vector (11 elements):
+    x = [p_e, p_n, psi, phi, theta, v_x, v_y, r, b_ax, b_ay, b_gz]^T
+    p_e, p_n  -- local ENU East/North position (m)
+    psi       -- yaw angle, CCW from East (rad)
+    phi       -- roll angle (rad)
+    theta     -- pitch angle (rad)
+    v_x, v_y  -- body-frame longitudinal/lateral velocity (m/s)
+    r         -- yaw rate (rad/s)
+    b_ax      -- IMU longitudinal accelerometer bias (m/s^2)
+    b_ay      -- IMU lateral accelerometer bias (m/s^2)
+    b_gz      -- IMU gyro z-axis bias (rad/s)
+
+Control input:
+    u = [a_x_meas, delta_logged]^T
+
+Sensor updates active:
+    - GPS position       (h = [p_e, p_n]^T,                    analytic H)
+    - GPS velocity       (h = R(psi) [v_x, v_y]^T,             analytic H)
+    - IMU yaw            (h = [psi],                            analytic H)
+    - IMU yaw rate       (h = [r + b_gz],                       analytic H)
+    - IMU roll           (h = [phi],                            analytic H)
+    - IMU pitch          (h = [theta],                          analytic H)
+    - IMU lateral accel  (h = [(F_yf cos delta + F_yr)/m + b_ay], numerical H)
+
+Frame conventions:
+    - Body: +X forward, +Y left, +Z up
+    - World: local ENU  (x = East, y = North)
+    - Steering: configurable sign mapping (see config/frames.yaml)
 """
 
 
 STATE_VECTOR_2D = (
-    "p_e_m",
-    "p_n_m",
-    "yaw_rad",
-    "v_x_body_mps",
-    "v_y_body_mps",
-    "yaw_rate_radps",
-    "accel_bias_x_mps2",
-    "gyro_bias_z_radps",
+    "p_e_m",              # 0
+    "p_n_m",              # 1
+    "yaw_rad",            # 2
+    "roll_rad",           # 3
+    "pitch_rad",          # 4
+    "v_x_body_mps",       # 5
+    "v_y_body_mps",       # 6
+    "yaw_rate_radps",     # 7
+    "accel_bias_x_mps2",  # 8
+    "accel_bias_y_mps2",  # 9
+    "gyro_bias_z_radps",  # 10
 )
 
 INPUT_VECTOR_2D = (
@@ -102,7 +118,10 @@ class NoiseParameters:
     gps_position_sigma_m: float = 2.5
     gps_velocity_sigma_mps: float = 0.05
     imu_yaw_sigma_rad: float = 0.026
+    imu_roll_sigma_rad: float = 0.026
+    imu_pitch_sigma_rad: float = 0.026
     imu_yaw_rate_sigma_radps: float = 0.0014
+    imu_lateral_accel_sigma_mps2: float = 0.012
 
     accel_bias_walk_sigma_mps3: float = 0.05
     gyro_bias_walk_sigma_radps2: float = 0.01
@@ -140,125 +159,34 @@ class NoiseParameters:
                     read_nested(imu_noise, "yaw_sigma_rad", default=0.026),
                 )
             ),
+            imu_roll_sigma_rad=float(
+                measurement_noise.get(
+                    "imu_roll_sigma_rad",
+                    read_nested(imu_noise, "roll_sigma_rad", default=0.026),
+                )
+            ),
+            imu_pitch_sigma_rad=float(
+                measurement_noise.get(
+                    "imu_pitch_sigma_rad",
+                    read_nested(imu_noise, "pitch_sigma_rad", default=0.026),
+                )
+            ),
             imu_yaw_rate_sigma_radps=float(
                 measurement_noise.get(
                     "imu_yaw_rate_sigma_radps",
                     read_nested(imu_noise, "yaw_rate_sigma_radps", default=0.0014),
                 )
             ),
+            imu_lateral_accel_sigma_mps2=float(
+                measurement_noise.get(
+                    "imu_lateral_accel_sigma_mps2",
+                    read_nested(imu_noise, "lateral_accel_sigma_mps2", default=0.012),
+                )
+            ),
             accel_bias_walk_sigma_mps3=float(process_noise.get("accel_bias_walk_sigma_mps3", 0.05)),
             gyro_bias_walk_sigma_radps2=float(process_noise.get("gyro_bias_walk_sigma_radps2", 0.01)),
             model_velocity_sigma_mps2=float(process_noise.get("model_velocity_sigma_mps2", 1.5)),
             model_yaw_accel_sigma_radps2=float(process_noise.get("model_yaw_accel_sigma_radps2", 2.0)),
-        )
-
-
-@dataclass(frozen=True)
-class VehicleParameters:
-    """
-    Dynamic planar vehicle parameters.
-
-    These are placeholders until you identify values for the actual RC car.
-    """
-
-    mass_kg: float = 5.0
-    yaw_inertia_kgm2: float = 0.6
-    lf_m: float = 0.18
-    lr_m: float = 0.18
-    cornering_stiffness_front_nprad: float = 45.0
-    cornering_stiffness_rear_nprad: float = 45.0
-    drag_coefficient_longitudinal: float = 0.0
-    min_longitudinal_speed_mps: float = 0.3
-
-    @classmethod
-    def from_config_bundle(cls, config_bundle: Mapping[str, Mapping[str, object]]) -> "VehicleParameters":
-        vehicle_cfg = config_bundle.get("vehicle", {})
-        geometry_cfg = get_section(vehicle_cfg.get("geometry"), "geometry")
-        mass_cfg = get_section(vehicle_cfg.get("mass_properties"), "mass_properties")
-        tire_cfg = get_section(vehicle_cfg.get("tire_model"), "tire_model")
-        longitudinal_cfg = get_section(vehicle_cfg.get("longitudinal_model"), "longitudinal_model")
-
-        active_tires = get_section(tire_cfg.get("active_configuration"), "active_configuration")
-        tire_catalog = get_section(tire_cfg.get("tire_catalog"), "tire_catalog")
-        axle_defaults = get_section(tire_cfg.get("axle_level_defaults"), "axle_level_defaults")
-
-        front_tire_name = active_tires.get("front_tire_type")
-        rear_tire_name = active_tires.get("rear_tire_type")
-        front_tire_cfg = get_section(tire_catalog.get(front_tire_name), str(front_tire_name)) if front_tire_name else {}
-        rear_tire_cfg = get_section(tire_catalog.get(rear_tire_name), str(rear_tire_name)) if rear_tire_name else {}
-
-        front_cornering = read_nested(
-            front_tire_cfg,
-            "cornering_stiffness_nprad",
-            default=read_nested(
-                axle_defaults,
-                "front_cornering_stiffness_nprad",
-                default=45.0,
-                unwrap_value=True,
-            ),
-        )
-        rear_cornering = read_nested(
-            rear_tire_cfg,
-            "cornering_stiffness_nprad",
-            default=read_nested(
-                axle_defaults,
-                "rear_cornering_stiffness_nprad",
-                default=45.0,
-                unwrap_value=True,
-            ),
-        )
-
-        return cls(
-            mass_kg=float(read_nested(mass_cfg, "selected_mass_kg", default=2.667, unwrap_value=True)),
-            yaw_inertia_kgm2=float(read_nested(mass_cfg, "yaw_inertia_kgm2", default=0.6, unwrap_value=True)),
-            lf_m=float(read_nested(geometry_cfg, "front_cg_distance_m", default=0.18, unwrap_value=True)),
-            lr_m=float(read_nested(geometry_cfg, "rear_cg_distance_m", default=0.18, unwrap_value=True)),
-            cornering_stiffness_front_nprad=float(front_cornering),
-            cornering_stiffness_rear_nprad=float(rear_cornering),
-            drag_coefficient_longitudinal=float(
-                read_nested(longitudinal_cfg, "drag_coefficient_longitudinal", default=0.0, unwrap_value=True)
-            ),
-            min_longitudinal_speed_mps=float(
-                read_nested(longitudinal_cfg, "min_longitudinal_speed_mps", default=0.3, unwrap_value=True)
-            ),
-        )
-
-    @classmethod
-    def from_dynamics_vehicle_parameters(
-        cls,
-        vehicle_parameters: VehicleParameterDefinition,
-    ) -> "VehicleParameters":
-        """Create EKF vehicle parameters from the shared dynamics-model parameter set."""
-        return cls(
-            mass_kg=float(vehicle_parameters.mass_kg),
-            yaw_inertia_kgm2=float(vehicle_parameters.yaw_inertia_kgm2),
-            lf_m=float(vehicle_parameters.front_cg_distance_m),
-            lr_m=float(vehicle_parameters.rear_cg_distance_m),
-            cornering_stiffness_front_nprad=float(vehicle_parameters.front_cornering_stiffness_nprad),
-            cornering_stiffness_rear_nprad=float(vehicle_parameters.rear_cornering_stiffness_nprad),
-            drag_coefficient_longitudinal=float(vehicle_parameters.longitudinal_drag_coefficient),
-            min_longitudinal_speed_mps=float(vehicle_parameters.min_longitudinal_speed_mps),
-        )
-
-    def to_dynamics_vehicle_parameters(
-        self,
-        base_parameters: VehicleParameterDefinition | None = None,
-    ) -> VehicleParameterDefinition:
-        """Convert EKF vehicle parameters into the shared dynamics-model structure."""
-        return VehicleParameterDefinition(
-            mass_kg=float(self.mass_kg),
-            wheelbase_m=float(
-                base_parameters.wheelbase_m if base_parameters is not None else (self.lf_m + self.lr_m)
-            ),
-            front_cg_distance_m=float(self.lf_m),
-            rear_cg_distance_m=float(self.lr_m),
-            track_width_m=float(base_parameters.track_width_m if base_parameters is not None else 0.30),
-            cg_height_m=float(base_parameters.cg_height_m if base_parameters is not None else 0.06),
-            yaw_inertia_kgm2=float(self.yaw_inertia_kgm2),
-            front_cornering_stiffness_nprad=float(self.cornering_stiffness_front_nprad),
-            rear_cornering_stiffness_nprad=float(self.cornering_stiffness_rear_nprad),
-            longitudinal_drag_coefficient=float(self.drag_coefficient_longitudinal),
-            min_longitudinal_speed_mps=float(self.min_longitudinal_speed_mps),
         )
 
 
@@ -298,6 +226,8 @@ def build_initial_covariance_from_config(config_bundle: Mapping[str, Mapping[str
 
     position_sigma = float(covariance_cfg.get("position_sigma_m", 10.0))
     yaw_sigma = float(covariance_cfg.get("yaw_sigma_rad", math.radians(30.0)))
+    roll_sigma = float(covariance_cfg.get("roll_sigma_rad", math.radians(10.0)))
+    pitch_sigma = float(covariance_cfg.get("pitch_sigma_rad", math.radians(10.0)))
     velocity_sigma = float(covariance_cfg.get("velocity_sigma_mps", 2.0))
     yaw_rate_sigma = float(covariance_cfg.get("yaw_rate_sigma_radps", math.radians(20.0)))
     accel_bias_sigma = float(covariance_cfg.get("accel_bias_sigma_mps2", 1.0))
@@ -305,14 +235,17 @@ def build_initial_covariance_from_config(config_bundle: Mapping[str, Mapping[str
 
     return np.diag(
         [
-            position_sigma**2,
-            position_sigma**2,
-            yaw_sigma**2,
-            velocity_sigma**2,
-            velocity_sigma**2,
-            yaw_rate_sigma**2,
-            accel_bias_sigma**2,
-            gyro_bias_sigma**2,
+            position_sigma**2,   # p_e
+            position_sigma**2,   # p_n
+            yaw_sigma**2,        # psi
+            roll_sigma**2,       # phi
+            pitch_sigma**2,      # theta
+            velocity_sigma**2,   # v_x
+            velocity_sigma**2,   # v_y
+            yaw_rate_sigma**2,   # r
+            accel_bias_sigma**2, # b_ax
+            accel_bias_sigma**2, # b_ay
+            gyro_bias_sigma**2,  # b_gz
         ]
     )
 
@@ -320,16 +253,16 @@ def build_initial_covariance_from_config(config_bundle: Mapping[str, Mapping[str
 MEASUREMENT_MODELS = (
     MeasurementDefinition(
         name="gps_position",
-        source_file="GPS_System.py",
+        source_file="GPS_Util.py",
         source_fields=("latitude", "longitude", "epx_m", "epy_m"),
         equation="z_pos = [p_e, p_n]^T + v",
         covariance_hint="Use gps epx/epy when present, else 2.5 m std dev",
     ),
     MeasurementDefinition(
         name="gps_velocity",
-        source_file="GPS_System.py",
+        source_file="GPS_Util.py",
         source_fields=("speed_m_s", "track_deg", "eps_m_s"),
-        equation="z_vel = [v_e, v_n]^T + v",
+        equation="z_vel = R(psi)[v_x, v_y]^T + v",
         covariance_hint="Use gps eps when present, else 0.05 m/s std dev",
     ),
     MeasurementDefinition(
@@ -340,11 +273,32 @@ MEASUREMENT_MODELS = (
         covariance_hint="Approx 0.026 rad std dev",
     ),
     MeasurementDefinition(
+        name="imu_roll",
+        source_file="IMU.py",
+        source_fields=("get_euler_angles()[0]",),
+        equation="z_roll = phi + v",
+        covariance_hint="Approx 0.026 rad std dev",
+    ),
+    MeasurementDefinition(
+        name="imu_pitch",
+        source_file="IMU.py",
+        source_fields=("get_euler_angles()[1]",),
+        equation="z_pitch = theta + v",
+        covariance_hint="Approx 0.026 rad std dev",
+    ),
+    MeasurementDefinition(
         name="imu_yaw_rate",
         source_file="IMU.py",
         source_fields=("get_raw_gyro()[2]",),
         equation="z_r = r + b_gz + v",
         covariance_hint="Approx 0.0014 rad/s std dev after unit conversion",
+    ),
+    MeasurementDefinition(
+        name="imu_lateral_accel",
+        source_file="IMU.py",
+        source_fields=("get_linear_acceleration()[1]",),
+        equation="z_ay = (F_yf*cos(delta) + F_yr)/m + b_ay + v",
+        covariance_hint="Approx 0.012 m/s^2 std dev; skip below low-speed threshold",
     ),
 )
 
@@ -417,76 +371,6 @@ def geodetic_to_local_xy_m(
     return np.array([east_m, north_m], dtype=float)
 
 
-def dynamic_vehicle_state_derivative_2d(
-    state: np.ndarray,
-    control: np.ndarray,
-    vehicle: VehicleParameters,
-    steering_sign_convention: str = DEFAULT_STEERING_SIGN_CONVENTION,
-) -> np.ndarray:
-    """
-    Backward-compatible wrapper around the shared nonlinear process model.
-
-    In EKF notation this function returns the continuous-time derivative
-    associated with x_dot = f(x, u). The actual math now lives in
-    ``DynamicsModel.derivative_from_ekf_state(...)`` so the EKF and the
-    standalone dynamics model share one motion model.
-
-    State:
-        x = [p_e, p_n, psi, v_x, v_y, r, b_ax, b_gz]^T
-
-    Control:
-        u = [a_x_meas, delta_logged]^T
-    """
-    x = np.asarray(state, dtype=float).reshape(-1)
-    u = np.asarray(control, dtype=float).reshape(-1)
-
-    if x.shape[0] != len(STATE_VECTOR_2D):
-        raise ValueError(f"Expected state size {len(STATE_VECTOR_2D)}, got {x.shape[0]}.")
-    if u.shape[0] != len(INPUT_VECTOR_2D):
-        raise ValueError(f"Expected control size {len(INPUT_VECTOR_2D)}, got {u.shape[0]}.")
-
-    model = DynamicsModel.from_config_bundle({})
-    model.set_vehicle_parameters(vehicle.to_dynamics_vehicle_parameters(model.vehicle_parameters))
-    return model.derivative_from_ekf_state(
-        state=x,
-        accel_body_x_mps2=float(u[0]),
-        steering_angle_rad=float(u[1]),
-        steering_sign_convention=steering_sign_convention,
-    )
-
-
-def predict_state_2d(
-    state: np.ndarray,
-    control: np.ndarray,
-    dt: float,
-    vehicle: VehicleParameters,
-    steering_sign_convention: str = DEFAULT_STEERING_SIGN_CONVENTION,
-) -> np.ndarray:
-    """
-    Discrete-time propagation helper for the nonlinear motion model.
-
-    This implements the discrete process map used by the EKF predict step:
-
-        x^-_k = f_d(x^+_{k-1}, u_k)
-
-    using a first-order Euler discretization of the continuous dynamics:
-
-        f_d(x, u) ~= x + f(x, u) * dt
-    """
-    if dt <= 0.0:
-        raise ValueError("dt must be positive.")
-
-    model = DynamicsModel.from_config_bundle({})
-    model.set_vehicle_parameters(vehicle.to_dynamics_vehicle_parameters(model.vehicle_parameters))
-    return model.predict_ekf_state(
-        state=state,
-        accel_body_x_mps2=float(np.asarray(control, dtype=float).reshape(-1)[0]),
-        steering_angle_rad=float(np.asarray(control, dtype=float).reshape(-1)[1]),
-        dt=dt,
-        steering_sign_convention=steering_sign_convention,
-    )
-
-
 def numerical_jacobian(
     fn: Callable[[np.ndarray], np.ndarray],
     x0: np.ndarray,
@@ -519,17 +403,23 @@ def default_process_noise(
     yaw_var = (noise.model_yaw_accel_sigma_radps2 * dt) ** 2
     accel_bias_var = (noise.accel_bias_walk_sigma_mps3 * dt) ** 2
     gyro_bias_var = (noise.gyro_bias_walk_sigma_radps2 * dt) ** 2
+    # Roll and pitch are driven directly by IMU measurements, but the predict
+    # step models them as random walks to let covariance grow between IMU ticks.
+    attitude_var = (noise.imu_roll_sigma_rad * dt) ** 2
 
     return np.diag(
         [
-            1e-4,
-            1e-4,
-            yaw_var,
-            velocity_var,
-            velocity_var,
-            yaw_var,
-            accel_bias_var,
-            gyro_bias_var,
+            1e-4,             # p_e   -- position integration error is small
+            1e-4,             # p_n
+            yaw_var,          # psi
+            attitude_var,     # phi   (roll)
+            attitude_var,     # theta (pitch)
+            velocity_var,     # v_x
+            velocity_var,     # v_y
+            yaw_var,          # r     (yaw rate)
+            accel_bias_var,   # b_ax
+            accel_bias_var,   # b_ay
+            gyro_bias_var,    # b_gz
         ]
     )
 
@@ -540,7 +430,10 @@ def default_measurement_noise(noise: NoiseParameters = NoiseParameters()) -> dic
         "gps_position": np.diag([noise.gps_position_sigma_m**2, noise.gps_position_sigma_m**2]),
         "gps_velocity": np.diag([noise.gps_velocity_sigma_mps**2, noise.gps_velocity_sigma_mps**2]),
         "imu_yaw": np.array([[noise.imu_yaw_sigma_rad**2]], dtype=float),
+        "imu_roll": np.array([[noise.imu_roll_sigma_rad**2]], dtype=float),
+        "imu_pitch": np.array([[noise.imu_pitch_sigma_rad**2]], dtype=float),
         "imu_yaw_rate": np.array([[noise.imu_yaw_rate_sigma_radps**2]], dtype=float),
+        "imu_lateral_accel": np.array([[noise.imu_lateral_accel_sigma_mps2**2]], dtype=float),
     }
 
 
@@ -576,15 +469,54 @@ def h_gps_velocity_2d(state: np.ndarray) -> np.ndarray:
     """
     Nonlinear measurement model for GPS velocity in the ENU/world frame.
 
-    The state stores velocity in the body frame, so this measurement function
-    applies the yaw-dependent rotation:
+    GPS reports velocity in the world frame, but the state stores velocity in
+    the body frame, so we apply the yaw-dependent rotation R(psi):
 
         z_vel = h_vel(x) + v
-              = R_body_to_world(psi) [v_x, v_y]^T + v
+              = R(psi) [v_x, v_y]^T + v
+              = [v_x*cos(psi) - v_y*sin(psi),
+                 v_x*sin(psi) + v_y*cos(psi)]^T + v
     """
     x = np.asarray(state, dtype=float).reshape(-1)
-    _p_e, _p_n, psi, v_x, v_y, _r, _b_ax, _b_gz = x
+    _p_e, _p_n, psi, _phi, _theta, v_x, v_y, _r, _b_ax, _b_ay, _b_gz = x
     return body_velocity_to_world_velocity(v_x, v_y, psi)
+
+
+def h_gps_velocity_jacobian_2d(state: np.ndarray) -> np.ndarray:
+    """
+    Analytic Jacobian of h_gps_velocity_2d with respect to the state vector.
+
+    Because h_vel is nonlinear in psi, v_x, and v_y, the EKF needs its
+    derivative H_k = dh/dx evaluated at the current predicted state.
+
+    Differentiating h_vel = [v_x*cos(psi) - v_y*sin(psi),
+                              v_x*sin(psi) + v_y*cos(psi)] row by row:
+
+        d(h[0])/d(psi) = -v_x*sin(psi) - v_y*cos(psi)
+        d(h[0])/d(v_x) =  cos(psi)
+        d(h[0])/d(v_y) = -sin(psi)
+
+        d(h[1])/d(psi) =  v_x*cos(psi) - v_y*sin(psi)
+        d(h[1])/d(v_x) =  sin(psi)
+        d(h[1])/d(v_y) =  cos(psi)
+
+    All other partial derivatives are zero.  Providing this analytically
+    avoids 16 extra DynamicsModel evaluations that a numerical Jacobian would
+    require (central differences over 8 state dimensions, 2 function outputs).
+    """
+    x = np.asarray(state, dtype=float).reshape(-1)
+    _p_e, _p_n, psi, _phi, _theta, v_x, v_y, _r, _b_ax, _b_ay, _b_gz = x
+    c, s = math.cos(psi), math.sin(psi)
+
+    h = np.zeros((2, len(STATE_VECTOR_2D)), dtype=float)
+    # Column indices: 0=p_e, 1=p_n, 2=psi, 3=phi, 4=theta, 5=v_x, 6=v_y, 7=r, 8=b_ax, 9=b_ay, 10=b_gz
+    h[0, 2] = -v_x * s - v_y * c   # d(v_e)/d(psi)
+    h[0, 5] = c                     # d(v_e)/d(v_x)
+    h[0, 6] = -s                    # d(v_e)/d(v_y)
+    h[1, 2] = v_x * c - v_y * s    # d(v_n)/d(psi)
+    h[1, 5] = s                     # d(v_n)/d(v_x)
+    h[1, 6] = c                     # d(v_n)/d(v_y)
+    return h
 
 
 def h_imu_yaw_2d(state: np.ndarray) -> np.ndarray:
@@ -608,7 +540,83 @@ def h_imu_yaw_rate_2d(state: np.ndarray) -> np.ndarray:
             = [r + b_gz] + v
     """
     x = np.asarray(state, dtype=float).reshape(-1)
-    return np.array([x[5] + x[7]], dtype=float)
+    return np.array([x[7] + x[10]], dtype=float)
+
+
+def h_imu_roll_2d(state: np.ndarray) -> np.ndarray:
+    """
+    Direct roll measurement model.
+
+    The BNO055 NDOF fusion reports a full Euler orientation tuple
+    (roll, pitch, yaw).  Roll maps directly to the phi state:
+
+        z_roll = h_roll(x) + v
+               = [phi] + v
+    """
+    x = np.asarray(state, dtype=float).reshape(-1)
+    return np.array([wrap_angle_rad(x[3])], dtype=float)
+
+
+def h_imu_pitch_2d(state: np.ndarray) -> np.ndarray:
+    """
+    Direct pitch measurement model.
+
+    The BNO055 NDOF fusion reports a full Euler orientation tuple
+    (roll, pitch, yaw).  Pitch maps directly to the theta state:
+
+        z_pitch = h_pitch(x) + v
+                = [theta] + v
+    """
+    x = np.asarray(state, dtype=float).reshape(-1)
+    return np.array([x[4]], dtype=float)
+
+
+def h_imu_lateral_accel_2d(
+    state: np.ndarray,
+    steering_angle_logged_rad: float,
+    dynamics_model: "DynamicsModel",
+) -> np.ndarray:
+    """
+    Nonlinear lateral body-frame acceleration measurement model.
+
+    The BNO055 gravity-compensated linear acceleration in the body Y-axis is:
+
+        a_linear_y = dot_v_y + v_x * r
+                   = (F_yf * cos(delta) + F_yr) / m + b_ay
+
+    where:
+        F_yf = 2 * C_f * alpha_f     -- front lateral tire force
+        F_yr = 2 * C_r * alpha_r     -- rear lateral tire force
+        alpha_f = delta_math - (v_y + a*r) / v_x_safe
+        alpha_r = -(v_y - b*r) / v_x_safe
+
+    ``steering_angle_logged_rad`` is the raw logged steering angle;
+    ``compute_slip_angles`` applies the configured sign convention internally.
+
+    The bias term b_ay (index 9) captures any systematic IMU offset in
+    the lateral axis.  This update is evaluated using a numerical Jacobian
+    because the tire-force equations are nonlinear in v_x, v_y, and r.
+    """
+    x = np.asarray(state, dtype=float).reshape(-1)
+    _p_e, _p_n, _psi, _phi, _theta, v_x, v_y, r, _b_ax, b_ay, _b_gz = x
+
+    state_dict = {
+        "v_x_body_mps": float(v_x),
+        "v_y_body_mps": float(v_y),
+        "yaw_rate_radps": float(r),
+    }
+    input_dict = {
+        "steering_angle_rad": float(steering_angle_logged_rad),
+    }
+    slip = dynamics_model.compute_slip_angles(state_dict, input_dict)
+    forces = dynamics_model.compute_lateral_tire_forces(slip)
+
+    # The math steering angle (after sign conversion) is needed for the cos(delta) projection.
+    delta_math = slip["steering_angle_math_rad"]
+    cos_delta = math.cos(delta_math)
+    m = dynamics_model.vehicle_parameters.mass_kg
+    a_lat = (forces["front_lateral_force_n"] * cos_delta + forces["rear_lateral_force_n"]) / m
+    return np.array([a_lat + float(b_ay)], dtype=float)
 
 
 class ExtendedKalmanFilter:
@@ -626,7 +634,7 @@ class ExtendedKalmanFilter:
 
     def __init__(
         self,
-        vehicle: VehicleParameters | None = None,
+        vehicle: VehicleParameterDefinition | None = None,
         noise: NoiseParameters = NoiseParameters(),
         steering_sign_convention: str = DEFAULT_STEERING_SIGN_CONVENTION,
         low_speed_velocity_update_threshold_mps: float = 0.2,
@@ -640,22 +648,17 @@ class ExtendedKalmanFilter:
             if dynamics_model is not None
             else DynamicsModel.from_config_bundle(self.config_bundle)
         )
-        if vehicle is None:
-            if dynamics_model is not None:
-                resolved_vehicle = VehicleParameters.from_dynamics_vehicle_parameters(
-                    self.dynamics_model.vehicle_parameters
-                )
-            elif self.config_bundle is not None:
-                resolved_vehicle = VehicleParameters.from_config_bundle(self.config_bundle)
-            else:
-                resolved_vehicle = VehicleParameters()
-        else:
+        # Resolve vehicle parameters: caller-supplied > from config bundle > dynamics model > defaults.
+        # VehicleParameterDefinition is the shared type used by DynamicsModel, so no conversion needed.
+        if vehicle is not None:
             resolved_vehicle = vehicle
+        elif self.config_bundle is not None:
+            resolved_vehicle = VehicleParameterDefinition.from_config_bundle(self.config_bundle)
+        else:
+            resolved_vehicle = self.dynamics_model.vehicle_parameters
 
         self.vehicle = resolved_vehicle
-        self.dynamics_model.set_vehicle_parameters(
-            self.vehicle.to_dynamics_vehicle_parameters(self.dynamics_model.vehicle_parameters)
-        )
+        self.dynamics_model.set_vehicle_parameters(self.vehicle)
         self.noise = noise
         self.steering_sign_convention = steering_sign_convention
         self.low_speed_velocity_update_threshold_mps = float(low_speed_velocity_update_threshold_mps)
@@ -666,14 +669,17 @@ class ExtendedKalmanFilter:
             if initial_covariance is not None
             else np.diag(
                 [
-                    10.0**2,
-                    10.0**2,
-                    math.radians(30.0) ** 2,
-                    2.0**2,
-                    2.0**2,
-                    math.radians(20.0) ** 2,
-                    1.0**2,
-                    math.radians(5.0) ** 2,
+                    10.0**2,                    # p_e
+                    10.0**2,                    # p_n
+                    math.radians(30.0) ** 2,   # psi
+                    math.radians(10.0) ** 2,   # phi (roll)
+                    math.radians(10.0) ** 2,   # theta (pitch)
+                    2.0**2,                    # v_x
+                    2.0**2,                    # v_y
+                    math.radians(20.0) ** 2,   # r
+                    1.0**2,                    # b_ax
+                    1.0**2,                    # b_ay
+                    math.radians(5.0) ** 2,    # b_gz
                 ]
             )
         )
@@ -703,7 +709,7 @@ class ExtendedKalmanFilter:
         shared_dynamics_model = dynamics_model or DynamicsModel.from_config_bundle(bundle)
 
         return cls(
-            vehicle=VehicleParameters.from_config_bundle(bundle),
+            vehicle=VehicleParameterDefinition.from_config_bundle(bundle),
             noise=NoiseParameters.from_config_bundle(bundle),
             steering_sign_convention=steering_sign_convention,
             low_speed_velocity_update_threshold_mps=float(
@@ -733,6 +739,8 @@ class ExtendedKalmanFilter:
         position_east_m: float = 0.0,
         position_north_m: float = 0.0,
         yaw_rad: float = 0.0,
+        roll_rad: float = 0.0,
+        pitch_rad: float = 0.0,
         velocity_x_body_mps: float = 0.0,
         velocity_y_body_mps: float = 0.0,
         yaw_rate_radps: float = 0.0,
@@ -741,14 +749,17 @@ class ExtendedKalmanFilter:
         """Initialize the EKF state directly in the chosen local/world frames."""
         self.state = np.array(
             [
-                float(position_east_m),
-                float(position_north_m),
-                wrap_angle_rad(float(yaw_rad)),
-                float(velocity_x_body_mps),
-                float(velocity_y_body_mps),
-                float(yaw_rate_radps),
-                0.0,
-                0.0,
+                float(position_east_m),          # p_e
+                float(position_north_m),          # p_n
+                wrap_angle_rad(float(yaw_rad)),   # psi
+                wrap_angle_rad(float(roll_rad)),  # phi
+                float(pitch_rad),                 # theta
+                float(velocity_x_body_mps),       # v_x
+                float(velocity_y_body_mps),       # v_y
+                float(yaw_rate_radps),            # r
+                0.0,                              # b_ax
+                0.0,                              # b_ay
+                0.0,                              # b_gz
             ],
             dtype=float,
         )
@@ -888,7 +899,8 @@ class ExtendedKalmanFilter:
         )
         # P^-_k = F_k P^+_{k-1} F_k^T + Q_k
         self.covariance = transition @ self.covariance @ transition.T + q
-        self.state[2] = wrap_angle_rad(self.state[2])
+        self.state[2] = wrap_angle_rad(self.state[2])   # psi
+        self.state[3] = wrap_angle_rad(self.state[3])   # phi (roll)
         return self.get_estimate()
 
     def update(
@@ -947,7 +959,8 @@ class ExtendedKalmanFilter:
 
         # x^+_k = x^-_k + K_k y_k
         self.state = self.state + k @ innovation
-        self.state[2] = wrap_angle_rad(self.state[2])
+        self.state[2] = wrap_angle_rad(self.state[2])   # psi
+        self.state[3] = wrap_angle_rad(self.state[3])   # phi (roll)
 
         # Joseph-form covariance update. This preserves symmetry and tends to be
         # safer numerically than the minimal P = (I - K H) P form.
@@ -994,7 +1007,9 @@ class ExtendedKalmanFilter:
             if measurement_noise is None
             else np.asarray(measurement_noise, dtype=float)
         )
-        return self.update(velocity_world, h_gps_velocity_2d, None, r)
+        # Use the analytic Jacobian — avoids 16 numerical DynamicsModel calls
+        # per GPS velocity update.  See h_gps_velocity_jacobian_2d for the derivation.
+        return self.update(velocity_world, h_gps_velocity_2d, h_gps_velocity_jacobian_2d(self.state), r)
 
     def update_yaw(
         self,
@@ -1020,14 +1035,73 @@ class ExtendedKalmanFilter:
         """Update with gyro z-rate."""
         z = np.array([float(yaw_rate_radps)], dtype=float)
         h = np.zeros((1, len(STATE_VECTOR_2D)), dtype=float)
-        h[0, 5] = 1.0
-        h[0, 7] = 1.0
+        h[0, 7] = 1.0   # r   (yaw_rate_radps)
+        h[0, 10] = 1.0  # b_gz (gyro z bias)
         r = (
             default_measurement_noise(self.noise)["imu_yaw_rate"]
             if measurement_noise is None
             else np.asarray(measurement_noise, dtype=float)
         )
         return self.update(z, h_imu_yaw_rate_2d, h, r)
+
+    def update_roll(
+        self,
+        roll_rad: float,
+        measurement_noise: np.ndarray | None = None,
+    ) -> EKFEstimate:
+        """Update with BNO055 fused roll angle."""
+        z = np.array([wrap_angle_rad(float(roll_rad))], dtype=float)
+        h = np.zeros((1, len(STATE_VECTOR_2D)), dtype=float)
+        h[0, 3] = 1.0   # phi (roll_rad)
+        r = (
+            default_measurement_noise(self.noise)["imu_roll"]
+            if measurement_noise is None
+            else np.asarray(measurement_noise, dtype=float)
+        )
+        return self.update(z, h_imu_roll_2d, h, r, angle_index=0)
+
+    def update_pitch(
+        self,
+        pitch_rad: float,
+        measurement_noise: np.ndarray | None = None,
+    ) -> EKFEstimate:
+        """Update with BNO055 fused pitch angle."""
+        z = np.array([float(pitch_rad)], dtype=float)
+        h = np.zeros((1, len(STATE_VECTOR_2D)), dtype=float)
+        h[0, 4] = 1.0   # theta (pitch_rad)
+        r = (
+            default_measurement_noise(self.noise)["imu_pitch"]
+            if measurement_noise is None
+            else np.asarray(measurement_noise, dtype=float)
+        )
+        return self.update(z, h_imu_pitch_2d, h, r)
+
+    def update_lateral_accel(
+        self,
+        lateral_accel_mps2: float,
+        steering_angle_logged_rad: float,
+        measurement_noise: np.ndarray | None = None,
+    ) -> EKFEstimate:
+        """
+        Update with BNO055 gravity-compensated lateral body acceleration.
+
+        The measurement model is nonlinear (tire forces depend on v_x, v_y, r),
+        so this update uses a numerical Jacobian computed via central differences.
+        At low speed the tire-force model is unreliable; the update is skipped
+        when the estimated longitudinal speed is below the low-speed threshold.
+        """
+        if abs(self.state[5]) < self.low_speed_velocity_update_threshold_mps:
+            return self.get_estimate()
+
+        z = np.array([float(lateral_accel_mps2)], dtype=float)
+        h_fn = lambda s: h_imu_lateral_accel_2d(s, steering_angle_logged_rad, self.dynamics_model)
+        r = (
+            default_measurement_noise(self.noise)["imu_lateral_accel"]
+            if measurement_noise is None
+            else np.asarray(measurement_noise, dtype=float)
+        )
+        # measurement_jacobian=None tells update() to compute it numerically via h_fn
+        return self.update(z, h_fn, None, r)
 
     def update_from_gps_data(self, gps_data: Mapping[str, object]) -> list[EKFEstimate]:
         """Apply whichever GPS measurements are available in a gpsd-style dict."""
@@ -1064,36 +1138,43 @@ Startup:
     1. Wait for a good GPS fix.
     2. Define a local ENU origin from the first trustworthy GPS sample.
     3. Initialize the dynamic state:
-         x = [p_e, p_n, psi, v_x, v_y, r, b_ax, b_gz]^T
-    4. Seed yaw from IMU heading or GPS track if available.
+         x = [p_e, p_n, psi, phi, theta, v_x, v_y, r, b_ax, b_ay, b_gz]^T
+    4. Seed yaw, roll, pitch from IMU heading.
 
-Main loop:
+Main loop (run at the IMU rate, ~100 Hz):
     1. dt = t_now - t_prev
-    2. Read steering angle delta.
-    3. Read IMU linear accel x and gyro z.
+    2. Read steering angle delta (logged or RC-receiver angle).
+    3. Read IMU linear accel x (body) and gyro z.
     4. Predict with:
          u = [a_x_meas, delta]^T
-    5. Update with GPS position if fix exists.
-    6. Update with GPS velocity if speed is above threshold.
-    7. Update with IMU yaw rate from gyro z.
-    8. Optionally update with fused IMU yaw when magnetics are trustworthy.
+    5. Update with IMU roll    (get_euler_angles()[0]).
+    6. Update with IMU pitch   (get_euler_angles()[1]).
+    7. Update with IMU yaw     (get_euler_angles()[2])  -- when magnetics are trustworthy.
+    8. Update with IMU yaw rate (get_raw_gyro()[2]).
+    9. Update with IMU lateral accel (get_linear_acceleration()[1]) -- above low-speed threshold.
+    10. Update with GPS position  -- when GPS fix is valid.
+    11. Update with GPS velocity  -- above low-speed threshold.
 
-This model is closer to the MathWorks vehicle-dynamics example because it
-propagates longitudinal velocity, lateral velocity, and yaw rate as dynamic
-states rather than treating steering as purely geometric curvature.
+Sensor priority notes:
+    - IMU orientation (roll, pitch, yaw) runs at 100 Hz; GPS at 1-10 Hz.
+    - GPS position sigma ~ 2.5 m; R_gps_pos is deliberately large to reflect this.
+    - GPS velocity sigma ~ 0.05 m/s; GPS velocity is much more reliable than GPS position.
+    - Lateral acceleration ties the tire dynamics directly into the velocity estimates.
 """
 
 
 if __name__ == "__main__":
     ekf = ExtendedKalmanFilter.from_default_config()
-    print("State vector:", STATE_VECTOR_2D)
+    print(f"State vector ({len(STATE_VECTOR_2D)} states):")
+    for i, name in enumerate(STATE_VECTOR_2D):
+        print(f"  [{i:2d}] {name}")
     print("Input vector:", INPUT_VECTOR_2D)
     print("Config-driven vehicle parameters:")
     print(f"  mass_kg={ekf.vehicle.mass_kg}")
-    print(f"  lf_m={ekf.vehicle.lf_m}")
-    print(f"  lr_m={ekf.vehicle.lr_m}")
-    print(f"  Cf={ekf.vehicle.cornering_stiffness_front_nprad}")
-    print(f"  Cr={ekf.vehicle.cornering_stiffness_rear_nprad}")
+    print(f"  lf_m={ekf.vehicle.front_cg_distance_m}")
+    print(f"  lr_m={ekf.vehicle.rear_cg_distance_m}")
+    print(f"  Cf={ekf.vehicle.front_cornering_stiffness_nprad}")
+    print(f"  Cr={ekf.vehicle.rear_cornering_stiffness_nprad}")
     print("Measurement models:")
     for measurement in MEASUREMENT_MODELS:
         print(f"  - {measurement.name}: {measurement.equation}")

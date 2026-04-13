@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/arcar/AppData/Local/Programs/**)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/arcar/**)",
+      "Bash(/c/Users/arcar/anaconda3/envs/bwsi/python.exe ExtendedKalmanFilter.py)"
+    ]
+  }
+}

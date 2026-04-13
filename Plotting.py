@@ -2,6 +2,8 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
+#TODO this is a very basic plotting script, it can be improved by adding error handling, support for different file formats, and more customization options for the plots.
+
 # Path to CSV
 file_path = os.path.join('.', 'data', 'data.csv')
 

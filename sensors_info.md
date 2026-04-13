@@ -1,19 +1,19 @@
-# Sensor Info
-This document includes information on all sensors and electronics used in this repository for the purpose of creating the sensor model.
 
----
 
 # SENSOR TECHNICAL SPECIFICATIONS DOCUMENT
+
+This document includes information on all sensors and electronics used in this repository for the purpose of creating the sensor model. This information is summarized from the sensor datasheets and relevant documentation.
+
 ## RC CAR NAVIGATION SYSTEM
 
----
+
 
 ## 1. SYSTEM OVERVIEW
 
 **Sensors:**
 - GNSS: Adafruit Ultimate GPS Hat (FGPMMOPA6H / MTK3339)
 - IMU: Bosch BNO055 (9-DOF)
-- Control Input: RC Receiver (PWM via Arduino Nano)
+- Control "Steering Angle" Input: RC Receiver (PWM via Arduino Nano)
 
 ### Project Frame Conventions
 
@@ -161,7 +161,7 @@ Reference options to support during development:
 | Mapped Angle | -60° to +60° |
 
 Current project interpretation of the mapped steering angle is still being
-verified. For now, support both of these possibilities in code:
+verified. For now, support is given both of these possibilities in code (configurable):
 - Option A: `-60 deg` full left, `0 deg` centered, `+60 deg` full right
 - Option B: `+60 deg` full left, `0 deg` centered, `-60 deg` full right
 
@@ -244,7 +244,7 @@ Recommended starting convention for the filter:
 | Parameter | Value |
 |----------|------|
 | Outputs | Euler, Quaternion, Linear Accel, Gravity |
-| Interface | I2C / UART |
+| Interface | I2C |
 | Accel Range | ±2/4/8/16 g |
 | Gyro Range | ±125–2000 °/s |
 | Mag Range | ±1300 / ±2500 µT |
@@ -258,7 +258,7 @@ Recommended starting convention for the filter:
 |----------|------|
 | PWM Rate | ~50 Hz |
 | Pulse Range | 942–1835 µs |
-| Voltage | ~6V (requires divider) |
+| Voltage | ~3.3V |
 
 ---
 
