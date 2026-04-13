@@ -266,15 +266,15 @@ class IMU(object):
         return 0.5 * (np.min(sample_array, axis=0) + np.max(sample_array, axis=0))
 
     def __init__(self,
-                 enabled:bool=True, 
-                 verbose : bool = True,
-                 use_alternate_imu_address : bool = False,
-                 mode : Mode = Mode.NDOF_MODE,
-                 use_manual_calibration : bool = False,
-                 enable_post_calibration : bool = True,
-                 post_calibration_sample_count : int = 128,
-                 post_calibration_sample_period_sec : float = 0.02,
-                 post_calibrate_gravity : bool = True
+                 enabled                            : bool          = True, 
+                 verbose                            : bool          = True,
+                 use_alternate_imu_address          : bool          = False,
+                 mode                               : Mode          = Mode.NDOF_MODE,
+                 use_manual_calibration             : bool          = False,
+                 enable_post_calibration            : bool          = True,
+                 post_calibration_sample_count      : int           = 128,
+                 post_calibration_sample_period_sec : float         = 0.02, # TODO check this value
+                 post_calibrate_gravity             : bool          = True
                  ):
         """
         Initialize the BNO055 IMU interface.
@@ -311,41 +311,50 @@ class IMU(object):
         
         self.__verbose = verbose
         self.__enabled = enabled
+        
         if use_alternate_imu_address:
             self.__i2c_address = ALT_I2C_ADDR
         else:
             self.__i2c_address = DEFAULT_I2C_ADDR
-        if robotSupported:
-            self.__i2c = busio.I2C(board.SCL, board.SDA)
-            self.__sensor = adafruit_bno055.BNO055_I2C(self.__i2c, address=self.__i2c_address)
-            self.__sensor.mode = mode
+
+        if self.__enabled and robotSupported:
+            self.__i2c          = busio.I2C(board.SCL, board.SDA)
+            self.__sensor       = adafruit_bno055.BNO055_I2C(self.__i2c, address=self.__i2c_address)
+            self.__sensor.mode  = mode
         else:
-            self.__i2c = None
+            self.__i2c      = None
             self.__sensor = None
+
         self.__mode = mode
 
-        self.__last_val = 0xFFFF
-        self.__zeroed_orientation_offset = (0,0,0)
-        self.__calibrated : bool = False
-        self.__enable_post_calibration = bool(enable_post_calibration or use_manual_calibration)
-        self.__post_calibration_sample_count = max(1, int(post_calibration_sample_count))
-        self.__post_calibration_sample_period_sec = max(0.0, float(post_calibration_sample_period_sec))
-        self.__post_calibrate_gravity = bool(post_calibrate_gravity)
-        self.__linear_acceleration_offset = np.zeros(3, dtype=float)
-        self.__raw_acceleration_offset = np.zeros(3, dtype=float)
-        self.__gravity_offset = np.zeros(3, dtype=float)
-        self.__post_calibration_sample_total = 0
-        self.__post_calibration_gravity_reference = STANDARD_GRAVITY_MPS2
-        self.__last_temperature = 0
-        self.__last_quaternion = (1.0, 0.0, 0.0, 0.0)
-        self.__last_euler = (0.0, 0.0, 0.0)
-        self.__last_linear_acceleration = (0.0, 0.0, 0.0)
-        self.__last_gravity_vector = (0.0, 0.0, STANDARD_GRAVITY_MPS2)
-        self.__last_raw_acceleration = (0.0, 0.0, 0.0)
-        self.__last_raw_gyro = (0.0, 0.0, 0.0)
-        self.__last_raw_magnetometer = (0.0, 0.0, 0.0)
+        
+
+        self.__zeroed_orientation_offset            : tuple            = (0,0,0)
+        self.__calibrated : bool                    = False
+        self.__enable_post_calibration              : bool              = bool(enable_post_calibration or use_manual_calibration)
+        self.__post_calibration_sample_count        : int               = max(1, int(post_calibration_sample_count))
+        self.__post_calibration_sample_period_sec   : float             = max(0.0, float(post_calibration_sample_period_sec))
+        self.__post_calibrate_gravity               : bool              = bool(post_calibrate_gravity)
+        self.__linear_acceleration_offset           : np.ndarray        = np.zeros(3, dtype=float)
+        self.__raw_acceleration_offset              : np.ndarray        = np.zeros(3, dtype=float)
+        self.__gravity_offset                       : np.ndarray        = np.zeros(3, dtype=float)
+        self.__post_calibration_sample_total        : int               = 0
+        self.__post_calibration_gravity_reference   : float             = STANDARD_GRAVITY_MPS2 #TODO this should be magnitude reference
+
+        # The last temperature value
+        self.__last_val                 : int               = 0xFFFF
+        self.__last_temperature         : int               = 0
+
+        self.__last_quaternion          : tuple            = (1.0, 0.0, 0.0, 0.0)
+        self.__last_euler               : tuple            = (0.0, 0.0, 0.0)
+        self.__last_linear_acceleration : tuple            = (0.0, 0.0, 0.0)
+        self.__last_gravity_vector      : tuple            = (0.0, 0.0, STANDARD_GRAVITY_MPS2)
+        self.__last_raw_acceleration    : tuple            = (0.0, 0.0, 0.0)
+        self.__last_raw_gyro            : tuple            = (0.0, 0.0, 0.0)
+        self.__last_raw_magnetometer    : tuple            = (0.0, 0.0, 0.0)
+
         if self.__sensor is not None:
-            print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
+            print(f"BNO055 IMU initialized with ACCEL RANGE: {self.__sensor.accel_mode}G, GYRO RANGE: {self.__sensor.gyro_mode}deg/s, and MAG RANGE: {self.__sensor.mag_mode}uT")
 
     def _safe_sensor_read(self, read_fn, fallback, *, context: str):
         """
@@ -401,6 +410,7 @@ class IMU(object):
             self.__last_temperature,
             context="temperature",
         )
+
         if abs(result - self.__last_val) == 128:
             result = self._safe_sensor_read(
                 lambda: self.__sensor.temperature,
@@ -468,9 +478,9 @@ class IMU(object):
         if self.__enable_post_calibration:
             self.calibrate_vector_outputs()
         self.set_zeroed_orientation()
-        print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}")
+        print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}") #TODO update this to be more informative about the calibration status
 
-    def calibrate_vector_outputs(self) -> None:
+    def calibrate_vector_outputs(self) -> None: #TODO rename this method to be more specific about what it's calibrating
         """
         Estimate stationary offsets for derived acceleration channels.
 
@@ -484,20 +494,22 @@ class IMU(object):
         calibration_pause = 3.0
         print("Post-Calibration: Hold the IMU still to capture fused sensor bias.")
         time.sleep(calibration_pause)
-        print("Post-Calibration: Sampling linear acceleration, acceleration, and gravity...")
+        print("Post-Calibration: Sampling linear acceleration, acceleration, and gravity... MAKE SURE THE IMU IS STILL!")
 
-        linear_samples: list[np.ndarray] = []
-        raw_samples: list[np.ndarray] = []
-        gravity_samples: list[np.ndarray] = []
+        linear_samples:     list[np.ndarray] = []
+        raw_samples:        list[np.ndarray] = []
+        gravity_samples:    list[np.ndarray] = []
 
-        max_attempts = max(self.__post_calibration_sample_count * 3, self.__post_calibration_sample_count)
+        max_attempts = max(self.__post_calibration_sample_count * 3, self.__post_calibration_sample_count) #TODO this seems strange, comment this
+
         attempts = 0
         while len(linear_samples) < self.__post_calibration_sample_count and attempts < max_attempts:
             attempts += 1
 
-            linear_vector = self._to_vector3(self.__sensor.linear_acceleration)
-            raw_vector = self._to_vector3(self.__sensor.acceleration)
-            gravity_vector = self._to_vector3(self.__sensor.gravity)
+            linear_vector   = self._to_vector3(self.__sensor.linear_acceleration)
+            raw_vector      = self._to_vector3(self.__sensor.acceleration)
+            gravity_vector  = self._to_vector3(self.__sensor.gravity)
+            
             if linear_vector is None or raw_vector is None or gravity_vector is None:
                 time.sleep(self.__post_calibration_sample_period_sec)
                 continue
@@ -521,20 +533,20 @@ class IMU(object):
             print("Post-Calibration: No valid stationary samples captured; keeping zero offsets.")
             return
 
-        linear_mean = np.mean(np.vstack(linear_samples), axis=0)
-        raw_mean = np.mean(np.vstack(raw_samples), axis=0)
-        gravity_mean = np.mean(np.vstack(gravity_samples), axis=0)
+        linear_mean     = np.mean(np.vstack(linear_samples  ),   axis=0)
+        raw_mean        = np.mean(np.vstack(raw_samples     ),   axis=0)
+        gravity_mean    = np.mean(np.vstack(gravity_samples ),   axis=0)
 
         stationary_accel_gravity_delta = raw_mean - gravity_mean
         if self.__post_calibrate_gravity:
-            self.__raw_acceleration_offset = 0.5 * stationary_accel_gravity_delta
-            self.__gravity_offset = -0.5 * stationary_accel_gravity_delta
+            self.__raw_acceleration_offset  = 0.5   * stationary_accel_gravity_delta
+            self.__gravity_offset           = -0.5  * stationary_accel_gravity_delta
         else:
-            self.__raw_acceleration_offset = stationary_accel_gravity_delta
-            self.__gravity_offset = np.zeros(3, dtype=float)
+            self.__raw_acceleration_offset  = stationary_accel_gravity_delta
+            self.__gravity_offset           = np.zeros(3, dtype=float)
 
-        self.__linear_acceleration_offset = linear_mean
-        self.__post_calibration_sample_total = len(linear_samples)
+        self.__linear_acceleration_offset       = linear_mean
+        self.__post_calibration_sample_total    = len(linear_samples)
 
         gravity_norm = float(np.linalg.norm(gravity_mean))
         if np.isfinite(gravity_norm) and gravity_norm > 0.0:
@@ -651,16 +663,19 @@ class IMU(object):
         tuple[float, float, float, float]
             Current quaternion from the IMU.
         """
+        
         quaternion = self._safe_sensor_read(
             lambda: self.__sensor.quaternion,
             self.__last_quaternion,
             context="quaternion",
         )
+
         if not self._is_valid_quaternion(quaternion):
             return self.__last_quaternion
 
-        quaternion_tuple = tuple(np.asarray(quaternion, dtype=float).tolist())
-        self.__last_quaternion = quaternion_tuple
+        quaternion_tuple        = tuple(np.asarray(quaternion, dtype=float).tolist())
+        self.__last_quaternion  = quaternion_tuple
+
         return quaternion_tuple
     
     def get_euler_angles(self) -> tuple[float, float, float]:

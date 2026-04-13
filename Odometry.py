@@ -417,34 +417,6 @@ class Odometry(object):
             'quaternion' : self.__quaternion,
         }
     
-    def find_north(self): #TODO move to IMU.py and integrate with existing code there.
-        """
-        Estimate a north-referenced orientation from gravity and magnetic vectors.
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        list[float]
-            Estimated roll, pitch, and yaw angles in degrees relative to north.
-        """
-        # get gravity direction (down)
-        gX, gY, gZ = self.__gravity #m/s^2 #previously self.__acceleration, which works if still
-        gravityVec = [gX, gY, gZ]/np.sqrt(gX**2+gY**2+gZ**2) # unit vector direction
-        # get magnetic field direction
-        magX, magY, magZ = self.__magnetometer #gauss
-        magVec = [magX,magY,magZ]/np.sqrt(magX**2+magY**2+magZ**2) # unit vector direction
-        # get East (cross gravity and mag field directions)
-        east = np.cross(gravityVec,magVec)
-        # get North (cross East and gravity)
-        north = np.cross(east,gravityVec)
-        rollN = np.arctan2(north[2],north[1])
-        pitchN = np.arctan2(north[2],north[0])
-        # assuming roll and pitch are zero - calculate the yaw from x and y values of North direction
-        yawN = np.arctan2(north[0],north[1])
-        return ([(180/np.pi)*rollN,(180/np.pi)*pitchN,(180/np.pi)*yawN])
 
     def update(self, dt : float = 1.000):
         """
@@ -521,4 +493,3 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         print("\nStopped odometry test loop.")
-

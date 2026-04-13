@@ -688,6 +688,8 @@ $$
 \mathbf{e}_\text{east} = \hat{\mathbf{g}}\times\hat{\mathbf{m}}, \qquad \mathbf{e}_\text{north} = \mathbf{e}_\text{east}\times\hat{\mathbf{g}}
 $$
 
+This legacy north estimate is implemented in `IMU.manual_find_north()` and reused by `Odometry.find_north()` rather than being maintained as separate odometry-specific math.
+
 ---
 
 ## 14. Main Loop and Flow Diagrams
