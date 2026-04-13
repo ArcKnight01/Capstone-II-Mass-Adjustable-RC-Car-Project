@@ -114,9 +114,12 @@ class Battery(object):
         Returns
         -------
         str
-            Remaining battery time formatted as ``hh:mm:ss``.
+            Remaining battery time formatted as ``hh:mm:ss``, or ``"N/A"`` when unavailable.
         """
-        return convertTime(self.retrieve_seconds_left())
+        seconds = self.retrieve_seconds_left()
+        if seconds is None or seconds < 0:
+            return "N/A"
+        return convertTime(seconds)
     
     def get_plugged_in(self):
         """
@@ -131,6 +134,8 @@ class Battery(object):
         bool | None
             ``True`` if external power is connected, otherwise ``False``.
         """
+        if not self.__enable or self.__battery is None:
+            return False
         return self.__battery.power_plugged
     
         

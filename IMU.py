@@ -472,13 +472,23 @@ class IMU(object):
         time.sleep(1)
         self.calibrate_gyro()
         self.calibrated = self.__sensor.calibrated 
-        while (self.__sensor.calibration_status[0] == 0) and (self.__mode == Mode.NDOF_MODE):
+        while (self.__sensor.calibration_status[0] != 3) and (self.__mode == Mode.NDOF_MODE):
             print("Waiting on SYS to calibrate -- The BNO055 has NOT found the North Pole. \nWhen in NDOF mode,  any data where the system calibration value is '0'should generally be ignored")
+            print(
+                    f"SYS Calib Status: {100 / 3 * self.__sensor.calibration_status[0]:3.0f}%  "
+                    f"(sys={self.__sensor.calibration_status[0]} gyro={self.__sensor.calibration_status[1]} accel={self.__sensor.calibration_status[2]} mag={self.__sensor.calibration_status[3]})  |  "
+                )
             time.sleep(1)
+        
         if self.__enable_post_calibration:
             self.calibrate_vector_outputs()
         self.set_zeroed_orientation()
-        print(f"BNO055 IMU has completed calibration, calibration status is {self.__calibrated}") #TODO update this to be more informative about the calibration status
+        cal = self.__sensor.calibration_status  # (sys, gyro, accel, mag)
+        print(
+            f"BNO055 IMU calibration sequence complete. "
+            f"sensor.calibrated={self.__calibrated}  "
+            f"(sys={cal[0]} gyro={cal[1]} accel={cal[2]} mag={cal[3]})"
+        )
 
     def calibrate_vector_outputs(self) -> None: #TODO rename this method to be more specific about what it's calibrating
         """
@@ -491,9 +501,12 @@ class IMU(object):
         - linear acceleration bias relative to the expected zero vector
         - raw/gravity disagreement while stationary
         """
-        calibration_pause = 3.0
+        calibration_pause = 5.0
         print("Post-Calibration: Hold the IMU still to capture fused sensor bias.")
         time.sleep(calibration_pause)
+        for i in range(int(10)):
+            print(f"  Starting in {10 - i} seconds...")
+            time.sleep(1)
         print("Post-Calibration: Sampling linear acceleration, acceleration, and gravity... MAKE SURE THE IMU IS STILL!")
 
         linear_samples:     list[np.ndarray] = []
@@ -598,26 +611,40 @@ class IMU(object):
         None
             This method blocks until the accelerometer calibration completes.
         """
-        print("Accelerometer: Perform the six-step calibration dance.")
-        print("Place sensor board into six stable positions for a few seconds each:")
-        print("1) x-axis right, y-axis up,    z-axis away")
-        print("2) x-axis up,    y-axis left,  z-axis away")
-        print("3) x-axis left,  y-axis down,  z-axis away")
-        print("4) x-axis down,  y-axis right, z-axis away")
-        print("5) x-axis left,  y-axis right, z-axis up")
-        print("6) x-axis right, y-axis left,  z-axis down")
-        print("Repeat the steps until calibrated")
+        _ACCEL_STEPS = (
+            "1) x-axis right, y-axis up,    z-axis facing  (roll onto right side: left/+Y up, nose/+X pointing right)",
+            "2) x-axis up,    y-axis left,  z-axis facing  (stand on rear bumper: nose/+X pointing up)",
+            "3) x-axis left,  y-axis down,  z-axis facing  (roll onto left side: right/-Y up, nose/+X pointing left)",
+            "4) x-axis down,  y-axis right, z-axis facing  (stand on front bumper: nose/+X pointing down)",
+            "5) x-axis fwd,   y-axis left,  z-axis up      (lay flat, normal orientation: top/+Z up)",
+            "6) x-axis fwd,   y-axis right, z-axis down    (lay flat, upside down: top/+Z down)",
+        )
         while not self.__sensor.calibration_status[2] == 3:
-            # Calibration Dance Step Two: Accelerometer
-            #   Place sensor board into six stable positions for a few seconds each:
-            #    1) x-axis right, y-axis up,    z-axis away
-            #    2) x-axis up,    y-axis left,  z-axis away
-            #    3) x-axis left,  y-axis down,  z-axis away
-            #    4) x-axis down,  y-axis right, z-axis away
-            #    5) x-axis left,  y-axis right, z-axis up
-            #    6) x-axis right, y-axis left,  z-axis down
-            #   Repeat the steps until calibrated
-            print(f"Accel Calib Status: {100 / 3 * self.__sensor.calibration_status[2]:3.0f}%")
+            cal = self.__sensor.calibration_status  # (sys, gyro, accel, mag)
+            print("Accelerometer: Place sensor into six stable positions for a few seconds each (repeat until calibrated):")
+            for step in _ACCEL_STEPS:
+                print(f"  {step}")
+
+            accel   = self._to_vector3(self.__sensor.acceleration)
+            gravity = self._to_vector3(self.__sensor.gravity)
+            best = gravity if gravity is not None else accel
+            if best is not None:
+                dominant = int(np.argmax(np.abs(best)))
+                axis_labels = []
+                for i, name in enumerate(('X', 'Y', 'Z')):
+                    if i == dominant:
+                        axis_labels.append(f"{name}:{'UP' if best[i] > 0 else 'DOWN'}")
+                    else:
+                        axis_labels.append(f"{name}:horiz")
+                src = 'grav' if gravity is not None else 'raw'
+                vec_str = tuple(round(float(v), 2) for v in best)
+                print(
+                    f"Accel Calib Status: {100 / 3 * cal[2]:3.0f}%  "
+                    f"(sys={cal[0]} gyro={cal[1]} accel={cal[2]} mag={cal[3]})  |  "
+                    f"{' '.join(axis_labels)}  ({src})  vec={vec_str}"
+                )
+            else:
+                print(f"Accel Calib Status: {100 / 3 * cal[2]:3.0f}%  (sys={cal[0]} gyro={cal[1]} accel={cal[2]} mag={cal[3]})")
             time.sleep(1)
         print("... CALIBRATED")
         time.sleep(1)
