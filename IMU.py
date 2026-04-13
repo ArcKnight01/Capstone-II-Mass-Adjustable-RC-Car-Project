@@ -316,7 +316,39 @@ class IMU(object):
         self.__gravity_offset = np.zeros(3, dtype=float)
         self.__post_calibration_sample_total = 0
         self.__post_calibration_gravity_reference = STANDARD_GRAVITY_MPS2
+        self.__last_temperature = 0
+        self.__last_quaternion = (1.0, 0.0, 0.0, 0.0)
+        self.__last_euler = (0.0, 0.0, 0.0)
+        self.__last_linear_acceleration = (0.0, 0.0, 0.0)
+        self.__last_gravity_vector = (0.0, 0.0, STANDARD_GRAVITY_MPS2)
+        self.__last_raw_acceleration = (0.0, 0.0, 0.0)
+        self.__last_raw_gyro = (0.0, 0.0, 0.0)
+        self.__last_raw_magnetometer = (0.0, 0.0, 0.0)
         print(f"ACCEL RANGE: {self.__sensor.accel_mode}G")
+
+    def _safe_sensor_read(self, read_fn, fallback, *, context: str):
+        """
+        Execute a sensor read and return a fallback value on transient I2C failures.
+
+        Parameters
+        ----------
+        read_fn : callable
+            Zero-argument callable that performs the hardware read.
+        fallback : Any
+            Value to return when the sensor read fails.
+        context : str
+            Human-readable label describing the measurement being read.
+
+        Returns
+        -------
+        Any
+            Fresh sensor data when available, otherwise ``fallback``.
+        """
+        try:
+            return read_fn()
+        except OSError as exc:
+            print(f"IMU warning: failed to read {context} ({exc}); reusing last value.")
+            return fallback
 
     @property
     def calibrated(self) -> bool:
@@ -341,12 +373,21 @@ class IMU(object):
             Sensor temperature in degrees Celsius.
         """
         # global last_val  # noqa: PLW0603
-        result = self.__sensor.temperature
+        result = self._safe_sensor_read(
+            lambda: self.__sensor.temperature,
+            self.__last_temperature,
+            context="temperature",
+        )
         if abs(result - self.__last_val) == 128:
-            result = self.__sensor.temperature
+            result = self._safe_sensor_read(
+                lambda: self.__sensor.temperature,
+                self.__last_temperature,
+                context="temperature retry",
+            )
             if abs(result - self.__last_val) == 128:
-                return 0b00111111 & result
+                result = 0b00111111 & result
         self.__last_val = result
+        self.__last_temperature = result
         return result
     
     def set_zeroed_orientation(self) -> None:
@@ -587,7 +628,16 @@ class IMU(object):
         tuple[float, float, float, float]
             Current quaternion from the IMU.
         """
-        return self.__sensor.quaternion
+        quaternion = self._safe_sensor_read(
+            lambda: self.__sensor.quaternion,
+            self.__last_quaternion,
+            context="quaternion",
+        )
+        if quaternion is None:
+            return self.__last_quaternion
+
+        self.__last_quaternion = quaternion
+        return quaternion
     
     def get_euler_angles(self) -> tuple[float, float, float]:
         """
@@ -602,7 +652,16 @@ class IMU(object):
         tuple[float, float, float]
             Current Euler angles as ``(roll, pitch, yaw)`` in degrees.
         """
-        return normalize_bno055_euler(self.__sensor.euler)
+        euler = self._safe_sensor_read(
+            lambda: normalize_bno055_euler(self.__sensor.euler),
+            self.__last_euler,
+            context="Euler angles",
+        )
+        if euler is None:
+            return self.__last_euler
+
+        self.__last_euler = euler
+        return euler
     
     def get_rotation_matrix(self) -> np.ndarray:
         """
@@ -634,12 +693,18 @@ class IMU(object):
         tuple[float, float, float]
             Linear acceleration in meters per second squared, excluding gravity.
         """
-        linear_acceleration = self._to_vector3(self.__sensor.linear_acceleration)
+        linear_acceleration = self._safe_sensor_read(
+            lambda: self._to_vector3(self.__sensor.linear_acceleration),
+            self._to_vector3(self.__last_linear_acceleration),
+            context="linear acceleration",
+        )
         if linear_acceleration is None:
-            return (0.0, 0.0, 0.0)
+            return self.__last_linear_acceleration
 
         corrected_linear_acceleration = linear_acceleration - self.__linear_acceleration_offset
-        return self._vector_to_tuple(corrected_linear_acceleration)
+        corrected_linear_acceleration_tuple = self._vector_to_tuple(corrected_linear_acceleration)
+        self.__last_linear_acceleration = corrected_linear_acceleration_tuple
+        return corrected_linear_acceleration_tuple
     
     def get_gravity_vector(self) -> tuple[float, float, float]:
         """
@@ -654,12 +719,18 @@ class IMU(object):
         tuple[float, float, float]
             Gravity vector in meters per second squared.
         """
-        gravity_vector = self._to_vector3(self.__sensor.gravity)
+        gravity_vector = self._safe_sensor_read(
+            lambda: self._to_vector3(self.__sensor.gravity),
+            self._to_vector3(self.__last_gravity_vector),
+            context="gravity vector",
+        )
         if gravity_vector is None:
-            return (0.0, 0.0, 0.0)
+            return self.__last_gravity_vector
 
         corrected_gravity_vector = gravity_vector - self.__gravity_offset
-        return self._vector_to_tuple(corrected_gravity_vector)
+        corrected_gravity_vector_tuple = self._vector_to_tuple(corrected_gravity_vector)
+        self.__last_gravity_vector = corrected_gravity_vector_tuple
+        return corrected_gravity_vector_tuple
 
     def get_raw_acceleration(self) -> tuple[float, float, float]:
         """
@@ -674,12 +745,18 @@ class IMU(object):
         tuple[float, float, float]
             Raw acceleration values from the sensor.
         """
-        raw_acceleration = self._to_vector3(self.__sensor.acceleration)
+        raw_acceleration = self._safe_sensor_read(
+            lambda: self._to_vector3(self.__sensor.acceleration),
+            self._to_vector3(self.__last_raw_acceleration),
+            context="raw acceleration",
+        )
         if raw_acceleration is None:
-            return (0.0, 0.0, 0.0)
+            return self.__last_raw_acceleration
 
         corrected_raw_acceleration = raw_acceleration - self.__raw_acceleration_offset
-        return self._vector_to_tuple(corrected_raw_acceleration)
+        corrected_raw_acceleration_tuple = self._vector_to_tuple(corrected_raw_acceleration)
+        self.__last_raw_acceleration = corrected_raw_acceleration_tuple
+        return corrected_raw_acceleration_tuple
     
     def get_raw_gyro(self) -> tuple[float, float, float]:
         """
@@ -694,7 +771,16 @@ class IMU(object):
         tuple[float, float, float]
             Raw angular velocity values from the sensor.
         """
-        return self.__sensor.gyro
+        gyro = self._safe_sensor_read(
+            lambda: self.__sensor.gyro,
+            self.__last_raw_gyro,
+            context="gyroscope",
+        )
+        if gyro is None:
+            return self.__last_raw_gyro
+
+        self.__last_raw_gyro = gyro
+        return gyro
     
     def get_raw_magnetometer(self) -> tuple[float, float, float]:
         """
@@ -709,7 +795,16 @@ class IMU(object):
         tuple[float, float, float]
             Raw magnetic field values from the sensor.
         """
-        return self.__sensor.magnetic
+        magnetic = self._safe_sensor_read(
+            lambda: self.__sensor.magnetic,
+            self.__last_raw_magnetometer,
+            context="magnetometer",
+        )
+        if magnetic is None:
+            return self.__last_raw_magnetometer
+
+        self.__last_raw_magnetometer = magnetic
+        return magnetic
 
     # Legacy/manual ADCS-style helpers kept for experimentation only.
     # The active pipeline continues to use the BNO055 fused outputs directly.
