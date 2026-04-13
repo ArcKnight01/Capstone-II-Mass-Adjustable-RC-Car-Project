@@ -271,7 +271,7 @@ class IMU(object):
                  use_alternate_imu_address          : bool          = False,
                  mode                               : Mode          = Mode.NDOF_MODE,
                  use_manual_calibration             : bool          = False,
-                 enable_post_calibration            : bool          = True,
+                 enable_post_calibration            : bool          = False,
                  post_calibration_sample_count      : int           = 128,
                  post_calibration_sample_period_sec : float         = 0.02, # TODO check this value
                  post_calibrate_gravity             : bool          = True
