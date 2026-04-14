@@ -707,7 +707,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--post-calib-samples",
         type=int,
-        default=128,
+        default=256,
         help="Stationary samples to capture during post-calibration.",
     )
     parser.add_argument(
@@ -758,6 +758,18 @@ if __name__ == '__main__':
         default=2.0,
         help="Low-pass cutoff frequency in hertz for linear acceleration.",
     )
+    parser.add_argument(
+        "--orientation-low-pass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable angle-aware low-pass filtering on IMU Euler orientation.",
+    )
+    parser.add_argument(
+        "--orientation-low-pass-cutoff",
+        type=float,
+        default=2.0,
+        help="Low-pass cutoff frequency in hertz for IMU Euler orientation.",
+    )
 
     cli_args = parser.parse_args()
 
@@ -793,6 +805,8 @@ if __name__ == '__main__':
         linear_acceleration_filter_window_size=cli_args.linear_accel_window,
         low_pass_linear_acceleration=cli_args.low_pass,
         linear_acceleration_low_pass_cutoff_hz=cli_args.low_pass_cutoff,
+        low_pass_orientation=cli_args.orientation_low_pass,
+        orientation_low_pass_cutoff_hz=cli_args.orientation_low_pass_cutoff,
     )
 
     controller = Controller(
