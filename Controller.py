@@ -42,6 +42,7 @@ Example:
 
 from __future__ import annotations
 
+import argparse
 import math
 import sys
 import os
@@ -64,6 +65,7 @@ if robotSupported:
     import adafruit_bno055
 
 from Odometry import Odometry
+from IMU import IMU
 from RCReceiverNano import RCReceiver
 from RobotClock import Clock
 from Power import Battery
@@ -662,17 +664,136 @@ class Controller:
 
 
 if __name__ == '__main__':
-    args = sys.argv[1:]
-    filename = "data"
-    verbose = True
-    mode = NavigationMode.ODOMETRY_ONLY  # Change to EKF_IMU_ONLY or EKF_GPS_IMU to test
+    parser = argparse.ArgumentParser(
+        description="Run the RC car controller telemetry loop with configurable IMU/odometry filters."
+    )
+    parser.add_argument(
+        "filename",
+        nargs="?",
+        default="data",
+        help="Base filename for CSV output in the data directory.",
+    )
+    parser.add_argument(
+        "legacy_verbose",
+        nargs="?",
+        default=None,
+        help="Legacy positional verbose flag for backward compatibility.",
+    )
+    parser.add_argument(
+        "legacy_mode",
+        nargs="?",
+        default=None,
+        help="Legacy positional navigation mode for backward compatibility.",
+    )
+    parser.add_argument(
+        "--verbose",
+        dest="verbose",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable or disable verbose console output.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=NavigationMode.ALL,
+        default=None,
+        help="Navigation pipeline to run.",
+    )
+    parser.add_argument(
+        "--post-calib",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable the IMU stationary post-calibration pass.",
+    )
+    parser.add_argument(
+        "--post-calib-samples",
+        type=int,
+        default=128,
+        help="Stationary samples to capture during post-calibration.",
+    )
+    parser.add_argument(
+        "--post-calib-period",
+        type=float,
+        default=0.02,
+        help="Seconds between post-calibration samples.",
+    )
+    parser.add_argument(
+        "--post-calib-gravity",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Split stationary accel/gravity mismatch across both outputs during post-calibration.",
+    )
+    parser.add_argument(
+        "--filter-gyro",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable moving-average filtering on gyroscope readings.",
+    )
+    parser.add_argument(
+        "--gyro-window",
+        type=int,
+        default=3,
+        help="Gyroscope moving-average window size.",
+    )
+    parser.add_argument(
+        "--filter-linear-accel",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable moving-average filtering on linear acceleration.",
+    )
+    parser.add_argument(
+        "--linear-accel-window",
+        type=int,
+        default=3,
+        help="Linear-acceleration moving-average window size.",
+    )
+    parser.add_argument(
+        "--low-pass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable first-order low-pass filtering on linear acceleration.",
+    )
+    parser.add_argument(
+        "--low-pass-cutoff",
+        type=float,
+        default=2.0,
+        help="Low-pass cutoff frequency in hertz for linear acceleration.",
+    )
 
-    if len(args) >= 1:
-        filename = str(args[0])
-    if len(args) >= 2:
-        verbose = str(args[1]).strip().lower() in ("true", "1", "yes", "y")
-    if len(args) >= 3:
-        mode = str(args[2]).strip()
+    cli_args = parser.parse_args()
+
+    filename = str(cli_args.filename)
+    verbose = (
+        str(cli_args.legacy_verbose).strip().lower() in ("true", "1", "yes", "y")
+        if cli_args.legacy_verbose is not None
+        else True
+    )
+    if cli_args.verbose is not None:
+        verbose = cli_args.verbose
+
+    mode = cli_args.legacy_mode if cli_args.legacy_mode is not None else NavigationMode.ODOMETRY_ONLY
+    if cli_args.mode is not None:
+        mode = cli_args.mode
+
+    imu = IMU(
+        enabled=(True if robotSupported else False),
+        verbose=verbose,
+        enable_post_calibration=cli_args.post_calib,
+        post_calibration_sample_count=cli_args.post_calib_samples,
+        post_calibration_sample_period_sec=cli_args.post_calib_period,
+        post_calibrate_gravity=cli_args.post_calib_gravity,
+    )
+    odometry = Odometry(
+        verbose=verbose,
+        enabled=(True if robotSupported else False),
+        imu=imu,
+        calibrate_imu=True,
+        filter_gyro=cli_args.filter_gyro,
+        gyro_filter_window_size=cli_args.gyro_window,
+        filter_linear_acceleration=cli_args.filter_linear_accel,
+        linear_acceleration_filter_window_size=cli_args.linear_accel_window,
+        low_pass_linear_acceleration=cli_args.low_pass,
+        linear_acceleration_low_pass_cutoff_hz=cli_args.low_pass_cutoff,
+    )
 
     controller = Controller(
         verbose=verbose,
@@ -681,5 +802,6 @@ if __name__ == '__main__':
         csv_data_dir_name="data",
         csv_data_filename=filename,
         navigation_mode=mode,
+        odometry=odometry,
     )
     controller.run()

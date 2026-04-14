@@ -50,6 +50,7 @@ class Odometry(object):
                  verbose:bool=True, 
                  enabled:bool=True,
                  imu = None,
+                 calibrate_imu: bool = True,
                  initial_position : tuple = (0,0,0),
                  filter_gyro: bool = False,
                  gyro_filter_window_size: int = 3,
@@ -70,6 +71,10 @@ class Odometry(object):
             Whether odometry processing should be enabled.
         imu : object, optional
             IMU instance to use. If ``None``, a default IMU is created.
+        calibrate_imu : bool, optional
+            Whether to run the IMU calibration sequence during construction.
+            Set this to ``False`` when passing in a preconfigured IMU that has
+            already been calibrated.
         initial_position : tuple, optional
             Initial position of the robot as an ``(x, y, z)`` tuple.
         filter_gyro : bool, optional
@@ -92,11 +97,11 @@ class Odometry(object):
         """
         self.__clock = Clock()
         self.__imu = imu if imu is not None else IMU()
-        try: 
-            self.__imu.calibrate()
-        except: 
-            print("IMU failed to calibrate!")
-        pass
+        if calibrate_imu:
+            try:
+                self.__imu.calibrate()
+            except Exception:
+                print("IMU failed to calibrate!")
 
         print(f"IMU Calibration Status: {self.__imu.calibrated}")
 
