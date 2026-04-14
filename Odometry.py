@@ -44,6 +44,35 @@ from MovingAverageFilter import MovingAverageFilter
 from LowPassFilter import LowPassFilter
 from HighPassFilter import HighPassFilter
 
+class AngleLowPassFilter:
+    """First-order low-pass filter for wrapped angles in degrees."""
+
+    __slots__ = ("_filter",)
+
+    def __init__(self, cutoff_hz: float):
+        self._filter = LowPassFilter(cutoff_hz)
+
+    @staticmethod
+    def _wrap_delta_deg(delta_deg: float) -> float:
+        return (float(delta_deg) + 180.0) % 360.0 - 180.0
+
+    @staticmethod
+    def _wrap_angle_deg(angle_deg: float) -> float:
+        return float(angle_deg) % 360.0
+
+    def update(self, new_angle_deg: float, dt: float) -> float:
+        new_angle_deg = self._wrap_angle_deg(new_angle_deg)
+        if not self._filter._initialized:
+            self._filter.reset(new_angle_deg)
+            return new_angle_deg
+
+        current_angle_deg = self._wrap_angle_deg(self._filter.value)
+        delta_deg = self._wrap_delta_deg(new_angle_deg - current_angle_deg)
+        filtered_angle = self._filter.update(current_angle_deg + delta_deg, dt)
+        wrapped_angle = self._wrap_angle_deg(filtered_angle)
+        self._filter.reset(wrapped_angle)
+        return wrapped_angle
+
 class Odometry(object):
     """ Calculates position, velocity and angular velocity from acceleration and orientation"""
     def __init__(self,
@@ -58,6 +87,8 @@ class Odometry(object):
                  linear_acceleration_filter_window_size: int = 3,
                  low_pass_linear_acceleration: bool = True,
                  linear_acceleration_low_pass_cutoff_hz: float = 2.0,
+                 low_pass_orientation: bool = True,
+                 orientation_low_pass_cutoff_hz: float = 2.0,
 
                  ):
         """
@@ -89,6 +120,11 @@ class Odometry(object):
             Whether to apply a first-order low-pass filter to linear acceleration.
         linear_acceleration_low_pass_cutoff_hz : float, optional
             Cutoff frequency in hertz for the linear-acceleration low-pass filter.
+        low_pass_orientation : bool, optional
+            Whether to apply angle-aware low-pass filtering to IMU Euler
+            orientation before logging and downstream consumers use it.
+        orientation_low_pass_cutoff_hz : float, optional
+            Cutoff frequency in hertz for the orientation low-pass filter.
 
         Returns
         -------
@@ -112,6 +148,7 @@ class Odometry(object):
         self.__filter_gyro: bool = bool(filter_gyro)
         self.__filter_linear_acceleration: bool = bool(filter_linear_acceleration)
         self.__low_pass_linear_acceleration: bool = bool(low_pass_linear_acceleration)
+        self.__low_pass_orientation: bool = bool(low_pass_orientation)
         
         self.__body_acceleration : tuple = (0,0,0)
         self.__raw_body_acceleration : tuple = (0,0,0)
@@ -136,6 +173,10 @@ class Odometry(object):
         self.__linear_acceleration_low_pass_filters = self._build_vector_low_pass_filters(
             enabled=self.__low_pass_linear_acceleration,
             cutoff_hz=linear_acceleration_low_pass_cutoff_hz,
+        )
+        self.__orientation_low_pass_filters = self._build_angle_low_pass_filters(
+            enabled=self.__low_pass_orientation,
+            cutoff_hz=orientation_low_pass_cutoff_hz,
         )
 
         # orientation (roll, pitch, yaw)
@@ -244,6 +285,16 @@ class Odometry(object):
         return tuple(HighPassFilter(cutoff_hz) for _ in range(3))
 
     @staticmethod
+    def _build_angle_low_pass_filters(enabled: bool, cutoff_hz: float) -> tuple[AngleLowPassFilter, AngleLowPassFilter, AngleLowPassFilter] | None:
+        """
+        Create one wrapped-angle low-pass filter per Euler axis when enabled.
+        """
+        if not enabled:
+            return None
+
+        return tuple(AngleLowPassFilter(cutoff_hz) for _ in range(3))
+
+    @staticmethod
     def _apply_vector_moving_average_filters(
         values: tuple | list | np.ndarray | None,
         filters: tuple[MovingAverageFilter, MovingAverageFilter, MovingAverageFilter] | None,
@@ -337,6 +388,24 @@ class Odometry(object):
         -------
         tuple of float
             3-element tuple ``(x, y, z)`` of filtered values.
+        """
+        vector = Odometry._to_vector3(values)
+        if filters is None:
+            return tuple(vector.tolist())
+
+        return tuple(
+            filter_axis.update(component, dt)
+            for filter_axis, component in zip(filters, vector)
+        )
+
+    @staticmethod
+    def _apply_angle_low_pass_filters(
+        values: tuple | list | np.ndarray | None,
+        filters: tuple[AngleLowPassFilter, AngleLowPassFilter, AngleLowPassFilter] | None,
+        dt: float,
+    ) -> tuple[float, float, float]:
+        """
+        Apply wrapped-angle low-pass filters to a roll/pitch/yaw tuple in degrees.
         """
         vector = Odometry._to_vector3(values)
         if filters is None:
@@ -466,11 +535,15 @@ class Odometry(object):
         world_acceleration_vector = self.__rotation_matrix @ body_acceleration_vector
         self.__acceleration = tuple(world_acceleration_vector.tolist())
 
-        absolute_orientation = self._to_vector3(self.__imu.get_euler_angles())
+        absolute_orientation = self._apply_angle_low_pass_filters(
+            self.__imu.get_euler_angles(),
+            self.__orientation_low_pass_filters,
+            dt,
+        )
         zeroed_orientation = self._to_vector3(self.__imu.get_zeroed_orientation())
-        self.__absolute_orientation = tuple(absolute_orientation.tolist())
+        self.__absolute_orientation = absolute_orientation
         
-        self.__relative_orientation = tuple((absolute_orientation - zeroed_orientation).tolist())
+        self.__relative_orientation = tuple((self._to_vector3(absolute_orientation) - zeroed_orientation).tolist())
         self.__velocity = tuple(np.array(self.__previous_velocity) + 0.5 * (np.array(self.__acceleration) + np.array(self.__previous_acceleration)) * dt)
 
         self.__position = tuple(np.array(self.__previous_position) + 0.5 * (np.array(self.__velocity) + np.array(self.__previous_velocity)) * dt)
