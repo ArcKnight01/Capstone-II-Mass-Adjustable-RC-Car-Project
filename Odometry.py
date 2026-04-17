@@ -76,20 +76,20 @@ class AngleLowPassFilter:
 class Odometry(object):
     """ Calculates position, velocity and angular velocity from acceleration and orientation"""
     def __init__(self,
-                 verbose:bool=True, 
-                 enabled:bool=True,
-                 imu = None,
-                 calibrate_imu: bool = True,
-                 initial_position : tuple = (0,0,0),
-                 filter_gyro: bool = False,
-                 gyro_filter_window_size: int = 3,
-                 filter_linear_acceleration: bool = True,
-                 linear_acceleration_filter_window_size: int = 3,
-                 low_pass_linear_acceleration: bool = True,
-                 linear_acceleration_low_pass_cutoff_hz: float = 2.0,
-                 low_pass_orientation: bool = True,
-                 orientation_low_pass_cutoff_hz: float = 2.0,
-
+                 verbose:                                       bool                    = True, 
+                 enabled:                                       bool                    = True,
+                 imu:                                           IMU | None              = None,
+                 orientation_source:                            str                     = OrientationSource.BNO055,
+                 calibrate_imu:                                 bool                    = True,
+                 initial_position:                              tuple                   = (0,0,0),
+                 filter_gyro:                                   bool                    = False,
+                 gyro_filter_window_size:                       int                     = 3,
+                 filter_linear_acceleration:                    bool                    = True,
+                 linear_acceleration_filter_window_size:        int                     = 3,
+                 low_pass_linear_acceleration:                  bool                    = True,
+                 linear_acceleration_low_pass_cutoff_hz:        float                   = 2.0,
+                 low_pass_orientation:                          bool                    = True,
+                 orientation_low_pass_cutoff_hz:                float                   = 2.0,
                  ):
         """
         Initialize the odometry subsystem.
@@ -102,6 +102,10 @@ class Odometry(object):
             Whether odometry processing should be enabled.
         imu : object, optional
             IMU instance to use. If ``None``, a default IMU is created.
+        orientation_source : str, optional
+            Orientation pipeline to consume from the IMU. Defaults to the
+            BNO055 fused output but can be set to ``OrientationSource.MAHONY``
+            to exercise the new external raw-sensor fusion path.
         calibrate_imu : bool, optional
             Whether to run the IMU calibration sequence during construction.
             Set this to ``False`` when passing in a preconfigured IMU that has
@@ -131,8 +135,21 @@ class Odometry(object):
         None
             This constructor initializes odometry state and calibrates the IMU.
         """
-        self.__clock = Clock()
-        self.__imu = imu if imu is not None else IMU()
+
+        # Determine whether to print data to terminal
+        self.__verbose : bool = verbose
+
+        #Set whether odometry is enabled
+        self.__enabled : bool = enabled
+
+        self.__clock :       Clock   = Clock()     #TODO this isn't used for this class, this is now done in Controller.py
+            
+        self.__imu :         IMU     = imu if imu is not None else IMU() # TODO also make sure IMU is enabled
+        self.__orientation_source: str = (
+            orientation_source if orientation_source in OrientationSource.ALL else OrientationSource.BNO055
+        )
+        self.__imu.set_orientation_source(self.__orientation_source)
+        
         if calibrate_imu:
             try:
                 self.__imu.calibrate()
@@ -141,45 +158,50 @@ class Odometry(object):
 
         print(f"IMU Calibration Status: {self.__imu.calibrated}")
 
-        #Determine whether to print data to terminal
-        self.__verbose : bool = verbose
-        #Set whether odometry is enabled
-        self.__enabled : bool = enabled
-        self.__filter_gyro: bool = bool(filter_gyro)
-        self.__filter_linear_acceleration: bool = bool(filter_linear_acceleration)
-        self.__low_pass_linear_acceleration: bool = bool(low_pass_linear_acceleration)
-        self.__low_pass_orientation: bool = bool(low_pass_orientation)
-        
-        self.__body_acceleration : tuple = (0,0,0)
-        self.__raw_body_acceleration : tuple = (0,0,0)
-        self.__acceleration : tuple = (0,0,0)
-        self.__velocity : tuple = (0,0,0)
-        self.__position : tuple = initial_position
 
-        self.__previous_acceleration : tuple = (0,0,0)
-        self.__previous_velocity : tuple = (0,0,0)
-        self.__previous_position : tuple = initial_position
-        self.__raw_gyro : tuple = (0,0,0)
-        self.__quaternion : tuple = (1,0,0,0)
-        self.__rotation_matrix : np.ndarray = np.eye(3, dtype=float)
+       
+        self.__filter_gyro:                     bool = bool( filter_gyro                    )
+        self.__filter_linear_acceleration:      bool = bool( filter_linear_acceleration     )
+        self.__low_pass_linear_acceleration:    bool = bool( low_pass_linear_acceleration   )
+        self.__low_pass_orientation:            bool = bool( low_pass_orientation           )
+        
+        self.__body_acceleration :              tuple = (0,0,0) # Assuming that the vehicle starts as rest and not accelerating.
+        self.__raw_body_acceleration :          tuple = (0,0,0) # Assuming that the vehicle starts as rest and not accelerating.
+        self.__acceleration :                   tuple = (0,0,0) # Assuming that the vehicle starts as rest and not accelerating.
+        self.__velocity :                       tuple = (0,0,0) # Assuming that the vehicle starts at rest.
+        self.__position :                       tuple = initial_position
+
+        self.__previous_acceleration :          tuple       = (0,0,0)
+        self.__previous_velocity :              tuple       = (0,0,0)
+        self.__previous_position :              tuple       = initial_position
+        self.__raw_gyro :                       tuple       = (0,0,0)
+        self.__quaternion :                     tuple       = (1,0,0,0)
+        self.__rotation_matrix :                np.ndarray  = np.eye(3, dtype=float)
+
+
         self.__gyro_filters = self._build_vector_filters(
             enabled=self.__filter_gyro,
             window_size=gyro_filter_window_size,
         )
+
         self.__linear_acceleration_filters = self._build_vector_filters(
             enabled=self.__filter_linear_acceleration,
             window_size=linear_acceleration_filter_window_size,
         )
+
         self.__linear_acceleration_low_pass_filters = self._build_vector_low_pass_filters(
             enabled=self.__low_pass_linear_acceleration,
             cutoff_hz=linear_acceleration_low_pass_cutoff_hz,
         )
+
+        # TODO shouldn't this be a high pass filter?
         self.__orientation_low_pass_filters = self._build_angle_low_pass_filters(
             enabled=self.__low_pass_orientation,
             cutoff_hz=orientation_low_pass_cutoff_hz,
         )
 
         # orientation (roll, pitch, yaw)
+
         self.__initial_orientation : tuple = self.__imu.get_zeroed_orientation()
         self.__absolute_orientation : tuple = self.__initial_orientation
         self.__relative_orientation : tuple = (0,0,0)
@@ -489,6 +511,7 @@ class Odometry(object):
             'angular_velocity' : self.__gyro,
             'magnetic' : self.__magnetometer,
             'quaternion' : self.__quaternion,
+            'orientation_source': self.__orientation_source,
         }
     
 
@@ -506,15 +529,21 @@ class Odometry(object):
         None
             This method updates temperature, acceleration, orientation, velocity, and position.
         """
+
+        # Read all IMU values at the start of the update to ensure consistency 
+
+        
         self.__temperature = self.__imu.get_temperature()
         
-        
         self.__raw_gyro = self.__imu.get_raw_gyro()
+
         self.__gyro = self._apply_vector_moving_average_filters(
             self.__raw_gyro,
             self.__gyro_filters,
         )
+
         self.__raw_acceleration = self.__imu.get_raw_acceleration()
+
         self.__magnetometer = self.__imu.get_raw_magnetometer()
 
         self.__gravity = self.__imu.get_gravity_vector()
@@ -528,7 +557,7 @@ class Odometry(object):
             self.__linear_acceleration_low_pass_filters,
             dt,
         )
-        self.__quaternion = self.__imu.get_quaternion()
+        self.__quaternion = self.__imu.get_quaternion(source=self.__orientation_source, dt=dt)
         self._update_rotation_matrix(self.__quaternion)
 
         body_acceleration_vector = self._to_vector3(self.__body_acceleration)
@@ -536,7 +565,7 @@ class Odometry(object):
         self.__acceleration = tuple(world_acceleration_vector.tolist())
 
         absolute_orientation = self._apply_angle_low_pass_filters(
-            self.__imu.get_euler_angles(),
+            self.__imu.get_euler_angles(source=self.__orientation_source, dt=dt),
             self.__orientation_low_pass_filters,
             dt,
         )

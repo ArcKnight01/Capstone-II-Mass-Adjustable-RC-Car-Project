@@ -471,9 +471,9 @@ class Controller:
         self._ekf.update_yaw(yaw_rad)
         self._ekf.update_yaw_rate(gyro_z_radps)
 
-        # Lateral accel update: uses tire-force model.  EKF skips it internally
-        # below the low-speed threshold where the model is unreliable.
-        self._ekf.update_lateral_accel(accel_y, steering_rad)
+        # Lateral accel update disabled: the linear tire-force model is not valid
+        # for a racecar in the nonlinear tire regime (advisor feedback).
+        # DynamicsModel still computes slip angles / tire forces for reporting.
 
         # ── GPS updates (GPS_IMU mode only, when fix is valid) ─────────────
         if NavigationMode.uses_gps(self._navigation_mode):

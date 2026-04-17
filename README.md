@@ -8,11 +8,13 @@ This README is the short, practical setup guide for working in this repository. 
 
 ## What Is In This Repo
 
-- `Controller.py` is the main runtime loop. It calibrates the IMU on startup, reads steering data from the Arduino Nano, updates odometry, and logs a CSV file to `data/`.
+- `Controller.py` is the main runtime loop. It calibrates the IMU on startup, reads steering data from the Arduino Nano, updates odometry, optionally runs the Extended Kalman Filter, and logs a CSV to `data/`. The navigation pipeline is selected at launch with `--mode`.
 - `IMU.py` and `Odometry.py` handle the BNO055 IMU and derived motion estimates.
+- `ExtendedKalmanFilter.py` and `DynamicsModel.py` implement the EKF sensor fusion pipeline, loaded automatically when `--mode` is `ekf_imu_only` or `ekf_gps_imu`.
 - `RCReceiverNano.py` reads `$STEER,...` messages from the Arduino Nano over serial, usually `/dev/ttyUSB0`.
 - `GPS_System.py` wraps `gpsd` and exposes the latest GPS fix for the controller.
-- `Plotting.py` plots every numeric column in `data/data.csv`.
+- `Plotting.py` plots every numeric column in a CSV log.
+- `Animate.py` animates recorded telemetry as a 3D trajectory.
 - `Arduino Sketches/` contains the Nano firmware used for RC receiver testing and passthrough.
 
 ## Expected Hardware
@@ -162,143 +164,126 @@ flowchart LR
     GPSPY -->|"latlon & last fix data"| CTRL
 
 ```
-### Main logger
+### Controller.py — main telemetry loop
 
-Run the controller on the Pi after the IMU, Arduino Nano, and optional GPS hardware are connected:
+Run on the Pi after the IMU, Arduino Nano, and optional GPS hardware are connected:
 
 ```bash
 source .venv/bin/activate
-python Controller.py test_run True
+python Controller.py [FILENAME] [--verbose | --no-verbose] [--mode MODE] [OPTIONS]
 ```
 
-Argument order for `Controller.py`:
+| Argument | Default | Description |
+|---|---|---|
+| `FILENAME` | `data` | Base name for CSV output written to `data/` |
+| `--verbose` / `--no-verbose` | on | Toggle console output each loop |
+| `--mode MODE` | `odometry_only` | Navigation pipeline — see table below |
+| `--post-calib` | off | Run stationary IMU post-calibration pass after startup |
+| `--post-calib-samples N` | 256 | Samples collected during post-calibration |
+| `--post-calib-period SEC` | 0.02 | Seconds between post-calibration samples |
+| `--post-calib-gravity` / `--no-post-calib-gravity` | on | Split accel/gravity mismatch during post-calibration |
+| `--filter-gyro` | off | Moving-average filter on gyroscope readings |
+| `--gyro-window N` | 3 | Gyro moving-average window size |
+| `--filter-linear-accel` / `--no-filter-linear-accel` | on | Moving-average filter on linear acceleration |
+| `--linear-accel-window N` | 3 | Linear-accel moving-average window size |
+| `--low-pass` / `--no-low-pass` | on | First-order low-pass filter on linear acceleration |
+| `--low-pass-cutoff HZ` | 2.0 | Low-pass cutoff frequency for linear acceleration |
+| `--orientation-low-pass` / `--no-orientation-low-pass` | on | Angle-aware low-pass filter on IMU Euler orientation |
+| `--orientation-low-pass-cutoff HZ` | 2.0 | Low-pass cutoff frequency for IMU orientation |
 
-- First argument: output filename stem
-- Second argument: verbose flag (`True` or `False`)
+**Navigation modes** (`--mode`):
 
-Example:
+| Mode | Description |
+|---|---|
+| `odometry_only` | Pure IMU dead reckoning. No EKF. Baseline for comparison. |
+| `ekf_imu_only` | EKF with IMU only — no GPS. Indoor-safe; initialises immediately from BNO055 orientation. |
+| `ekf_gps_imu` | Full EKF fusing IMU + GPS. Waits for first GPS fix to set origin. Outdoor use. |
 
-- `python Controller.py imu_session True` writes `data/imu_session.csv`
+Odometry always runs regardless of mode, so both dead-reckoning and EKF columns appear in every CSV. EKF columns are empty strings when the EKF is not active.
 
-### Hardware bring-up scripts
-
-These modules can be run directly on the Pi while bringing hardware online:
+**Examples:**
 
 ```bash
-python IMU.py
-python Odometry.py
-python RCReceiverNano.py
-python GPS_System.py
+# Defaults: odometry_only, verbose on, writes data/data.csv
+python Controller.py
+
+# Named session with IMU-only EKF
+python Controller.py session_01 --mode ekf_imu_only
+
+# Outdoor GPS+IMU session with tighter filter cutoffs
+python Controller.py outdoor_01 --mode ekf_gps_imu --low-pass-cutoff 1.5 --orientation-low-pass-cutoff 1.5
+
+# Disable linear-accel low-pass, enable gyro filter with larger window
+python Controller.py raw_test --no-low-pass --filter-gyro --gyro-window 5
 ```
 
-### Plotting a logged run
-
-`Plotting.py` now supports an optional CSV path and a headless mode:
+### Plotting.py — plot a logged CSV
 
 ```bash
-python Plotting.py              # plots data/data.csv
-python Plotting.py data/imu.csv --no-show
+python Plotting.py [CSV_FILE] [--no-show]
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `CSV_FILE` | `data/data.csv` | CSV file to plot |
+| `--no-show` | off | Build plots without opening an interactive window |
+
+```bash
+python Plotting.py                              # plots data/data.csv
+python Plotting.py data/session_01.csv         # named run
+python Plotting.py data/session_01.csv --no-show  # headless
 ```
 
 The script accepts either `time` or `runtime` as the time axis column.
 
-### Running Individual Files
+### Animate.py — 3D trajectory animation
 
-Below are instructions for running each Python file in the repository. Most files can be run directly with `python <filename>.py` or using the wrapper on Windows.
+```bash
+python Animate.py [CSV_FILE] [OPTIONS]
+```
 
-#### Core System Files
+| Argument | Default | Description |
+|---|---|---|
+| `CSV_FILE` | `simulated_data.csv` or `data.csv` | Bare filenames resolve inside `data/` |
+| `--interval MS` | 80 | Milliseconds between animation frames |
+| `--step N` | 1 | Samples to skip between frames (speeds up long runs) |
+| `--trail N` | 250 | Number of prior samples visible in the position trail |
+| `--save PATH` | — | Save animation to file (`output.gif`, `output.mp4`, etc.) |
+| `--fps N` | 15 | Frames per second when saving |
+| `--no-show` | off | Build figure without opening an interactive window |
+| `--steering-sign` | `negative-left` | Sign convention for logged steering (`negative-left` or `positive-left`) |
 
-- **Controller.py**: Main runtime loop for data logging.
-  - Usage: `python Controller.py [output_filename] [verbose]`
-  - Arguments: output_filename (default: "data"), verbose (True/False, default: True)
-  - Example: `python Controller.py test_run True`
-  - Data flow: Reads from IMU, RC receiver, battery; integrates odometry; logs to CSV.
+```bash
+python Animate.py                                      # animates default CSV
+python Animate.py session_01.csv --step 2             # faster playback
+python Animate.py session_01.csv --save output.gif    # save as GIF
+```
 
-- **IMU.py**: Tests BNO055 IMU sensor interface.
-  - Usage: `python IMU.py`
-  - No arguments.
-  - Data flow: Initializes IMU, performs calibration, prints sensor readings.
+### RCReceiverNano.py — read steering data from Arduino Nano
 
-- **Odometry.py**: Tests IMU-based odometry integration.
-  - Usage: `python Odometry.py`
-  - No arguments.
-  - Data flow: Reads IMU data, applies filters, integrates acceleration to velocity/position.
+```bash
+python RCReceiverNano.py [WARMUP_SECONDS] [FLUSH_BUFFER]
+```
 
-- **RCReceiverNano.py**: Tests Arduino Nano serial communication for RC steering.
-  - Usage: `python RCReceiverNano.py`
-  - No arguments.
-  - Data flow: Reads NMEA-style messages from serial, parses steering angle.
+| Argument | Default | Description |
+|---|---|---|
+| `WARMUP_SECONDS` | 0 | Seconds to wait before reading (useful while the transmitter arms) |
+| `FLUSH_BUFFER` | `False` | Flush stale serial bytes before reading (`True`/`False`) |
 
-- **GPS_System.py**: Tests GPS interface via gpsd.
-  - Usage: `python GPS_System.py`
-  - No arguments.
-  - Data flow: Connects to gpsd daemon, caches latest GPS fixes.
+```bash
+python RCReceiverNano.py          # read immediately
+python RCReceiverNano.py 3 True   # wait 3 s, flush buffer, then read
+```
 
-#### Analysis and Visualization
+### Hardware bring-up (no arguments)
 
-- **Plotting.py**: Plots CSV data columns vs time.
-  - Usage: `python Plotting.py [csv_file] [--no-show]`
-  - Arguments: optional CSV path (default: `data/data.csv`), `--no-show` to run headless.
-  - Data flow: Loads CSV, plots each numeric column.
+Run directly on the Pi while bringing hardware online:
 
-- **Animate.py**: Creates 3D animation of vehicle trajectory.
-  - Usage: `python Animate.py [csv_file]`
-  - Arguments: csv_file (default: data/simulated_data.csv)
-  - Data flow: Reads position/orientation from CSV, animates in 3D.
-
-- **temp_integration.py**: Rebuilds velocity/position from acceleration data.
-  - Usage: `python temp_integration.py [--filter-gyro] [--low-pass-linear-acceleration]`
-  - Arguments: Optional flags for filtering.
-  - Data flow: Reads acceleration, integrates with optional filtering, writes new CSV.
-
-#### Filters and Utilities
-
-- **test_filters.py**: Tests filter implementations.
-  - Usage: `python test_filters.py`
-  - No arguments.
-  - Data flow: Creates test signals, applies filters, prints results.
-
-- **ComplementaryFilter.py**: Example complementary filter usage.
-  - Usage: `python ComplementaryFilter.py` (if runnable)
-  - May require arguments for signals.
-
-- **LowPassFilter.py**: Example low-pass filter.
-  - Usage: Requires integration into other code.
-
-- **HighPassFilter.py**: Example high-pass filter.
-  - Usage: Requires integration.
-
-- **MovingAverageFilter.py**: Example moving average filter.
-  - Usage: Requires integration.
-
-#### Configuration and Models
-
-- **ConfigLoader.py**: Loads YAML configuration files.
-  - Usage: Imported by other modules.
-
-- **ModelFactory.py**: Creates model instances from config.
-  - Usage: Imported by other modules.
-
-- **DynamicsModel.py**: Vehicle dynamics model for EKF.
-  - Usage: Imported by EKF.
-
-- **ExtendedKalmanFilter.py**: EKF implementation.
-  - Usage: Imported by Controller (when enabled).
-
-#### Other Files
-
-- **Robot.py**: Placeholder robot simulator (not implemented).
-- **Power.py**: Battery monitoring.
-- **RobotClock.py**: Timing utilities.
-- **Sensor.py**: Base sensor class.
-- **IMUUtil.py**: IMU utilities.
-- **GPS_Util.py**: GPS utilities.
-- **Servo_Motors.py**: Servo control (Pi only).
-- **ServoDriver_Util.py**: Servo utilities.
-- **Messages.py**: NMEA message definitions.
-- **WelfordsOnlineAlgorithm.py**: Online statistics.
-- **wrapper_timer.py**: Timing utilities.
-- **RGB_Indicator.py**: LED indicator (Pi only).
+```bash
+python IMU.py        # calibrate and read BNO055
+python Odometry.py   # IMU-based dead reckoning
+python GPS_System.py # connect to gpsd and read GPS fixes
+```
 
 ## Bring-Up Notes
 

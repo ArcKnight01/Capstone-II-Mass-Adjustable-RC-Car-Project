@@ -3,7 +3,7 @@
 """
 Created on Sat Jul 17 10:27:35 2021
 
-@author: BWSI AUV Challenge Instructional Staff
+@author: MIT BWSI AUV Challenge Instructional Staff
 """
 
 from pynmea2 import pynmea2

@@ -12,6 +12,7 @@ import psutil
 
 # https://www.geeksforgeeks.org/python/python-script-to-show-laptop-battery-percentage/
 
+# TODO this doesn't seem to work for the Raspberry Pi. This is most likely as when the Pi is powered by USB-C, even if that power source is a battery/power core, it will not report this as a battery. We may need to use a different method to monitor battery status on the Pi.
 
 # function returning time in hh:mm:ss
 def convertTime(seconds: int | float) -> str:

@@ -156,6 +156,51 @@ ALT_I2C_ADDR = 41
 # How often to update the BNO sensor data (in hertz).
 BNO_UPDATE_FREQUENCY_HZ = 10
 
+
+class OrientationSource:
+    """Supported orientation pipelines exposed by the IMU wrapper."""
+
+    BNO055 = "bno055"
+    MAHONY = "mahony"
+
+    ALL = (BNO055, MAHONY)
+
+
+def _normalize_vector(vector: np.ndarray | None) -> np.ndarray | None:
+    """Return a unit-length copy of ``vector`` when it is finite and non-zero."""
+    if vector is None:
+        return None
+
+    norm = float(np.linalg.norm(vector))
+    if not np.isfinite(norm) or norm == 0.0:
+        return None
+
+    return vector / norm
+
+
+def _normalize_quaternion(quaternion: np.ndarray | tuple | list) -> np.ndarray:
+    """Return a normalized quaternion, falling back to identity when invalid."""
+    quaternion_array = np.asarray(quaternion, dtype=float)
+    norm = float(np.linalg.norm(quaternion_array))
+    if quaternion_array.shape != (4,) or not np.isfinite(norm) or norm == 0.0:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    return quaternion_array / norm
+
+
+def _quaternion_multiply(q_a: np.ndarray, q_b: np.ndarray) -> np.ndarray:
+    """Hamilton product for quaternions ordered as ``(w, x, y, z)``."""
+    a_w, a_x, a_y, a_z = q_a
+    b_w, b_x, b_y, b_z = q_b
+    return np.array(
+        [
+            a_w * b_w - a_x * b_x - a_y * b_y - a_z * b_z,
+            a_w * b_x + a_x * b_w + a_y * b_z - a_z * b_y,
+            a_w * b_y - a_x * b_z + a_y * b_w + a_z * b_x,
+            a_w * b_z + a_x * b_y - a_y * b_x + a_z * b_w,
+        ],
+        dtype=float,
+    )
+
 # The BNO055 Mode, deprecated possibly.
 class Mode:
     CONFIG_MODE = 0x00
@@ -265,11 +310,52 @@ class IMU(object):
         sample_array = np.vstack(samples)
         return 0.5 * (np.min(sample_array, axis=0) + np.max(sample_array, axis=0))
 
+    @staticmethod
+    def _coerce_vector3(values, default: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> np.ndarray:
+        """Convert a user-supplied calibration vector into a finite ``(3,)`` array."""
+        vector = IMU._to_vector3(values)
+        if vector is None:
+            return np.asarray(default, dtype=float)
+        return vector
+
+    @staticmethod
+    def _coerce_matrix3x3(values, default: np.ndarray | None = None) -> np.ndarray:
+        """Convert a user-supplied calibration matrix into a finite ``(3, 3)`` array."""
+        if default is None:
+            default = np.eye(3, dtype=float)
+
+        try:
+            matrix = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            return np.asarray(default, dtype=float)
+
+        if matrix.shape != (3, 3) or not np.all(np.isfinite(matrix)):
+            return np.asarray(default, dtype=float)
+
+        return matrix
+
+    @staticmethod
+    def _apply_affine_calibration(vector: np.ndarray | None, offset: np.ndarray, matrix: np.ndarray) -> np.ndarray | None:
+        """Apply ``matrix @ (vector - offset)`` when ``vector`` is valid."""
+        if vector is None:
+            return None
+        return matrix @ (vector - offset)
+
     def __init__(self,
                  enabled                            : bool          = True, 
                  verbose                            : bool          = True,
                  use_alternate_imu_address          : bool          = False,
                  mode                               : Mode          = Mode.NDOF_MODE,
+                 orientation_source                 : str           = OrientationSource.BNO055,
+                 enable_external_fusion             : bool          = False,
+                 mahony_kp                          : float         = 0.8,
+                 mahony_ki                          : float         = 0.0,
+                 mahony_use_magnetometer            : bool          = True,
+                 raw_acceleration_bias              : tuple | list | np.ndarray = (0.0, 0.0, 0.0),
+                 raw_acceleration_correction_matrix : tuple | list | np.ndarray = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+                 raw_gyro_bias                      : tuple | list | np.ndarray = (0.0, 0.0, 0.0),
+                 raw_magnetometer_bias              : tuple | list | np.ndarray = (0.0, 0.0, 0.0),
+                 raw_magnetometer_correction_matrix : tuple | list | np.ndarray = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
                  use_manual_calibration             : bool          = False,
                  enable_post_calibration            : bool          = False,
                  post_calibration_sample_count      : int           = 256,
@@ -289,6 +375,34 @@ class IMU(object):
             Whether to use the alternate I2C address.
         mode : Mode, optional
             BNO055 operating mode to use.
+        orientation_source : str, optional
+            Active orientation pipeline. Use ``OrientationSource.BNO055`` to
+            trust the sensor's built-in fusion, or ``OrientationSource.MAHONY``
+            to run external fusion on corrected raw measurements.
+        enable_external_fusion : bool, optional
+            Whether the Mahony pipeline should be available. This is forced on
+            automatically when ``orientation_source`` is ``MAHONY``.
+        mahony_kp : float, optional
+            Proportional gain for the Mahony attitude filter.
+        mahony_ki : float, optional
+            Integral gain for the Mahony attitude filter.
+        mahony_use_magnetometer : bool, optional
+            Whether the external fusion path should use raw magnetic field data
+            in addition to accelerometer and gyroscope measurements.
+        raw_acceleration_bias : tuple, list, or numpy.ndarray, optional
+            Bias vector removed from raw accelerometer samples before the
+            external fusion path uses them.
+        raw_acceleration_correction_matrix : tuple, list, or numpy.ndarray, optional
+            ``3 x 3`` correction matrix applied to debiased raw accelerometer
+            samples before external fusion.
+        raw_gyro_bias : tuple, list, or numpy.ndarray, optional
+            Bias vector removed from raw gyroscope samples before external fusion.
+        raw_magnetometer_bias : tuple, list, or numpy.ndarray, optional
+            Bias vector removed from raw magnetometer samples before the
+            external fusion path uses them.
+        raw_magnetometer_correction_matrix : tuple, list, or numpy.ndarray, optional
+            ``3 x 3`` correction matrix applied to debiased raw magnetometer
+            samples before external fusion.
         use_manual_calibration : bool, optional
             Legacy compatibility flag. Manual vector calibration is now handled by
             the post-calibration step.
@@ -326,7 +440,22 @@ class IMU(object):
             self.__sensor = None
 
         self.__mode = mode
+        self.__orientation_source = (
+            orientation_source
+            if orientation_source in OrientationSource.ALL
+            else OrientationSource.BNO055
+        )
+        self.__enable_external_fusion = bool(enable_external_fusion or self.__orientation_source == OrientationSource.MAHONY)
+        self.__mahony_kp = float(mahony_kp)
+        self.__mahony_ki = float(mahony_ki)
+        self.__mahony_use_magnetometer = bool(mahony_use_magnetometer)
+        self.__raw_acceleration_bias = self._coerce_vector3(raw_acceleration_bias)
+        self.__raw_acceleration_correction_matrix = self._coerce_matrix3x3(raw_acceleration_correction_matrix)
+        self.__raw_gyro_bias = self._coerce_vector3(raw_gyro_bias)
+        self.__raw_magnetometer_bias = self._coerce_vector3(raw_magnetometer_bias)
+        self.__raw_magnetometer_correction_matrix = self._coerce_matrix3x3(raw_magnetometer_correction_matrix)
 
+        
         
 
         self.__zeroed_orientation_offset            : tuple            = (0,0,0)
@@ -352,6 +481,11 @@ class IMU(object):
         self.__last_raw_acceleration    : tuple            = (0.0, 0.0, 0.0)
         self.__last_raw_gyro            : tuple            = (0.0, 0.0, 0.0)
         self.__last_raw_magnetometer    : tuple            = (0.0, 0.0, 0.0)
+        self.__mahony_quaternion        : np.ndarray       = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+        self.__mahony_integral_error    : np.ndarray       = np.zeros(3, dtype=float)
+        self.__mahony_last_update_time  : float | None     = None
+        self.__last_mahony_quaternion   : tuple            = (1.0, 0.0, 0.0, 0.0)
+        self.__last_mahony_euler        : tuple            = (0.0, 0.0, 0.0)
 
         if self.__sensor is not None:
             print(f"BNO055 IMU initialized with ACCEL RANGE: {self.__sensor.accel_mode}G, GYRO RANGE: {self.__sensor.gyro_mode}deg/s, and MAG RANGE: {self.__sensor.magnet_mode}uT")
@@ -390,6 +524,40 @@ class IMU(object):
     @calibrated.setter
     def calibrated(self, value: bool) -> None:
         self.__calibrated = bool(value)
+
+    @property
+    def orientation_source(self) -> str:
+        """Return the currently selected orientation pipeline."""
+        return self.__orientation_source
+
+    def set_orientation_source(self, source: str) -> None:
+        """Switch between BNO055 fused orientation and external Mahony fusion."""
+        if source not in OrientationSource.ALL:
+            raise ValueError(f"Unsupported orientation source: {source}")
+        self.__orientation_source = source
+        if source == OrientationSource.MAHONY:
+            self.__enable_external_fusion = True
+
+    def configure_external_fusion_calibration(
+        self,
+        *,
+        raw_acceleration_bias: tuple | list | np.ndarray | None = None,
+        raw_acceleration_correction_matrix: tuple | list | np.ndarray | None = None,
+        raw_gyro_bias: tuple | list | np.ndarray | None = None,
+        raw_magnetometer_bias: tuple | list | np.ndarray | None = None,
+        raw_magnetometer_correction_matrix: tuple | list | np.ndarray | None = None,
+    ) -> None:
+        """Update the raw-sensor calibration terms used by the Mahony path."""
+        if raw_acceleration_bias is not None:
+            self.__raw_acceleration_bias = self._coerce_vector3(raw_acceleration_bias)
+        if raw_acceleration_correction_matrix is not None:
+            self.__raw_acceleration_correction_matrix = self._coerce_matrix3x3(raw_acceleration_correction_matrix)
+        if raw_gyro_bias is not None:
+            self.__raw_gyro_bias = self._coerce_vector3(raw_gyro_bias)
+        if raw_magnetometer_bias is not None:
+            self.__raw_magnetometer_bias = self._coerce_vector3(raw_magnetometer_bias)
+        if raw_magnetometer_correction_matrix is not None:
+            self.__raw_magnetometer_correction_matrix = self._coerce_matrix3x3(raw_magnetometer_correction_matrix)
 
     def get_temperature(self) -> int:
         """
@@ -483,6 +651,8 @@ class IMU(object):
         if self.__enable_post_calibration:
             self.calibrate_vector_outputs()
         self.set_zeroed_orientation()
+        if self.__enable_external_fusion:
+            self.reset_mahony_fusion()
         cal = self.__sensor.calibration_status  # (sys, gyro, accel, mag)
         print(
             f"BNO055 IMU calibration sequence complete. "
@@ -677,7 +847,11 @@ class IMU(object):
         print(f"  Offsets_Gyroscope:     {self.__sensor.offsets_gyroscope}")
 
 
-    def get_quaternion(self) -> tuple[float, float, float, float]:
+    def get_quaternion(
+        self,
+        source: str | None = None,
+        dt: float | None = None,
+    ) -> tuple[float, float, float, float]:
         """
         Retrieve the current orientation quaternion.
 
@@ -691,6 +865,10 @@ class IMU(object):
             Current quaternion from the IMU.
         """
         
+        selected_source = self.__orientation_source if source is None else source
+        if selected_source == OrientationSource.MAHONY:
+            return self.update_external_fusion(dt=dt)
+
         quaternion = self._safe_sensor_read(
             lambda: self.__sensor.quaternion,
             self.__last_quaternion,
@@ -704,8 +882,127 @@ class IMU(object):
         self.__last_quaternion  = quaternion_tuple
 
         return quaternion_tuple
+
+    def get_corrected_raw_acceleration(self) -> tuple[float, float, float]:
+        """
+        Retrieve raw acceleration corrected for the external fusion path.
+        """
+        corrected = self._apply_affine_calibration(
+            self._to_vector3(self.get_raw_acceleration()),
+            self.__raw_acceleration_bias,
+            self.__raw_acceleration_correction_matrix,
+        )
+        return self._vector_to_tuple(corrected)
+
+    def get_corrected_raw_gyro(self) -> tuple[float, float, float]:
+        """
+        Retrieve raw gyroscope data corrected for the external fusion path.
+        """
+        corrected = self._to_vector3(self.get_raw_gyro())
+        if corrected is None:
+            return (0.0, 0.0, 0.0)
+        return self._vector_to_tuple(corrected - self.__raw_gyro_bias)
+
+    def get_corrected_raw_magnetometer(self) -> tuple[float, float, float]:
+        """
+        Retrieve raw magnetic data corrected for the external fusion path.
+        """
+        corrected = self._apply_affine_calibration(
+            self._to_vector3(self.get_raw_magnetometer()),
+            self.__raw_magnetometer_bias,
+            self.__raw_magnetometer_correction_matrix,
+        )
+        return self._vector_to_tuple(corrected)
+
+    def reset_mahony_fusion(self, quaternion: tuple | list | np.ndarray | None = None) -> None:
+        """
+        Reset the external Mahony state, optionally seeding it with a quaternion.
+        """
+        if quaternion is None:
+            quaternion = self.get_quaternion(source=OrientationSource.BNO055)
+
+        quaternion_array = _normalize_quaternion(quaternion)
+        self.__mahony_quaternion = quaternion_array
+        self.__mahony_integral_error = np.zeros(3, dtype=float)
+        self.__mahony_last_update_time = None
+        quaternion_tuple = tuple(quaternion_array.tolist())
+        self.__last_mahony_quaternion = quaternion_tuple
+        self.__last_mahony_euler = quaternion_to_euler_angle(*quaternion_tuple)
+
+    def update_external_fusion(
+        self,
+        dt: float | None = None,
+        *,
+        acceleration: tuple | list | np.ndarray | None = None,
+        gyro: tuple | list | np.ndarray | None = None,
+        magnetic: tuple | list | np.ndarray | None = None,
+    ) -> tuple[float, float, float, float]:
+        """
+        Advance the external Mahony orientation estimate from corrected raw data.
+        """
+        if not self.__enable_external_fusion:
+            return self.__last_mahony_quaternion
+
+        if dt is None:
+            now = time.monotonic()
+            if self.__mahony_last_update_time is None:
+                self.__mahony_last_update_time = now
+                return self.__last_mahony_quaternion
+            dt = now - self.__mahony_last_update_time
+            self.__mahony_last_update_time = now
+        else:
+            dt = max(0.0, float(dt))
+            self.__mahony_last_update_time = time.monotonic()
+
+        if dt <= 0.0:
+            return self.__last_mahony_quaternion
+
+        accel_vector = self._to_vector3(
+            self.get_corrected_raw_acceleration() if acceleration is None else acceleration
+        )
+        gyro_vector = self._to_vector3(
+            self.get_corrected_raw_gyro() if gyro is None else gyro
+        )
+        mag_vector = self._to_vector3(
+            self.get_corrected_raw_magnetometer() if magnetic is None else magnetic
+        )
+
+        accel_unit = _normalize_vector(accel_vector)
+        gyro_rates = np.deg2rad(gyro_vector) if gyro_vector is not None else np.zeros(3, dtype=float)
+        if accel_unit is None:
+            return self.__last_mahony_quaternion
+
+        q = self.__mahony_quaternion
+        reference_gravity = quaternion_rotation_matrix(q).T @ np.array([0.0, 0.0, 1.0], dtype=float)
+        error = np.cross(reference_gravity, accel_unit)
+
+        if self.__mahony_use_magnetometer:
+            mag_unit = _normalize_vector(mag_vector)
+            if mag_unit is not None:
+                reference_mag_world = np.array([1.0, 0.0, 0.0], dtype=float)
+                reference_mag_body = quaternion_rotation_matrix(q).T @ reference_mag_world
+                error = error + np.cross(reference_mag_body, mag_unit)
+
+        if self.__mahony_ki > 0.0:
+            self.__mahony_integral_error = self.__mahony_integral_error + error * dt
+        else:
+            self.__mahony_integral_error = np.zeros(3, dtype=float)
+
+        corrected_gyro = gyro_rates + (self.__mahony_kp * error) + (self.__mahony_ki * self.__mahony_integral_error)
+        q_dot = 0.5 * _quaternion_multiply(q, np.array([0.0, *corrected_gyro], dtype=float))
+        q = _normalize_quaternion(q + q_dot * dt)
+
+        self.__mahony_quaternion = q
+        quaternion_tuple = tuple(q.tolist())
+        self.__last_mahony_quaternion = quaternion_tuple
+        self.__last_mahony_euler = quaternion_to_euler_angle(*quaternion_tuple)
+        return quaternion_tuple
     
-    def get_euler_angles(self) -> tuple[float, float, float]:
+    def get_euler_angles(
+        self,
+        source: str | None = None,
+        dt: float | None = None,
+    ) -> tuple[float, float, float]:
         """
         Retrieve the current Euler orientation angles.
 
@@ -718,6 +1015,12 @@ class IMU(object):
         tuple[float, float, float]
             Current Euler angles as ``(roll, pitch, yaw)`` in degrees.
         """
+        selected_source = self.__orientation_source if source is None else source
+        if selected_source == OrientationSource.MAHONY:
+            quaternion = self.update_external_fusion(dt=dt)
+            self.__last_mahony_euler = quaternion_to_euler_angle(*quaternion)
+            return self.__last_mahony_euler
+
         euler = self._safe_sensor_read(
             lambda: normalize_bno055_euler(self.__sensor.euler),
             self.__last_euler,
@@ -729,7 +1032,11 @@ class IMU(object):
         self.__last_euler = euler
         return euler
     
-    def get_rotation_matrix(self) -> np.ndarray:
+    def get_rotation_matrix(
+        self,
+        source: str | None = None,
+        dt: float | None = None,
+    ) -> np.ndarray:
         """
         Compute a rotation matrix from the current quaternion.
 
@@ -744,7 +1051,7 @@ class IMU(object):
         """
         # TODO calculate 3x3 rotation matrix from quaternion
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-        quaternion = self.get_quaternion()
+        quaternion = self.get_quaternion(source=source, dt=dt)
         if not self._is_valid_quaternion(quaternion):
             return np.eye(3, dtype=float)
 
@@ -1240,6 +1547,25 @@ class IMU(object):
             "gravity_offset": self._vector_to_tuple(self.__gravity_offset),
             "sample_count": self.__post_calibration_sample_total,
             "gravity_reference_mps2": self.__post_calibration_gravity_reference,
+        }
+
+    def get_external_fusion_status(self) -> dict[str, object]:
+        """
+        Return the current external-fusion configuration and latest estimate.
+        """
+        return {
+            "enabled": self.__enable_external_fusion,
+            "orientation_source": self.__orientation_source,
+            "mahony_kp": self.__mahony_kp,
+            "mahony_ki": self.__mahony_ki,
+            "mahony_use_magnetometer": self.__mahony_use_magnetometer,
+            "quaternion": self.__last_mahony_quaternion,
+            "euler": self.__last_mahony_euler,
+            "raw_acceleration_bias": self._vector_to_tuple(self.__raw_acceleration_bias),
+            "raw_acceleration_correction_matrix": self.__raw_acceleration_correction_matrix.tolist(),
+            "raw_gyro_bias": self._vector_to_tuple(self.__raw_gyro_bias),
+            "raw_magnetometer_bias": self._vector_to_tuple(self.__raw_magnetometer_bias),
+            "raw_magnetometer_correction_matrix": self.__raw_magnetometer_correction_matrix.tolist(),
         }
 
     def get_calibration_data(self) -> tuple[tuple[int, int, int, int], bool]:

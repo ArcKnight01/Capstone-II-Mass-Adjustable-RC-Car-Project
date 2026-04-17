@@ -446,7 +446,7 @@ class ServoDriver:
 if __name__ == "__main__":
     import time
 
-    print("ServoDriver smoke test")
+    print("ServoDriver test")
     print(f"  Running on robot hardware: {robotSupported}")
 
     print(f"  map_range(1500, 1000, 2000, 0, 180) = {map_range(1500, 1000, 2000, 0, 180)}")

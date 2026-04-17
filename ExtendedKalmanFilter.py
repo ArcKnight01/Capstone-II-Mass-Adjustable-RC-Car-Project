@@ -17,28 +17,46 @@ Extended Kalman Filter (EKF) for the RC car navigation project.
 Architecture overview
 ---------------------
 DynamicsModel (DynamicsModel.py)
-    Owns the nonlinear process model  f(x, u)  and its discrete form  f_d.
-    It is intentionally separate so the vehicle dynamics can be developed,
-    tuned, and tested independently from the filter machinery.
+    Retains the bicycle vehicle-dynamics model for offline reporting and analysis
+    (slip angles, tire forces, load transfer, handling balance).  It is NO LONGER
+    used in the EKF predict step.  See "Process model" note below.
 
 ExtendedKalmanFilter (this file)
     Owns the filter state x and covariance P.
-    It calls DynamicsModel for predict and applies sensor corrections in update.
+    Uses a simple kinematic process model for predict; applies sensor corrections
+    in update.
 
-The nonlinear EKF equations:
+Process model note (advisor feedback)
+--------------------------------------
+The previous bicycle/single-track dynamics model assumed linear tire behaviour
+(constant cornering stiffness C_f, C_r).  For a slow-moving vehicle this is
+acceptable, but a racecar pushes tires into the nonlinear regime where that
+assumption breaks down.  Ackermann steering angles and linear slip-angle models
+would require extensive tire characterisation testing to be valid here.  On the
+advisor's recommendation the EKF now uses a simple kinematic process model that
+treats the car like a drone (GPS + IMU sensor fusion) without any vehicle
+dynamics — consistent with the original reference:
+    https://github.com/Janudis/Extended-Kalman-Filter-GPS_IMU
+
+The EKF equations:
 
     Process model:     x_k = f(x_{k-1}, u_k) + w_k     w ~ N(0, Q)
     Measurement model: z_k = h(x_k)          + v_k     v ~ N(0, R)
 
-Predict step  (run every loop iteration, driven by IMU + steering):
+Predict step  (run every loop iteration, driven by IMU):
 
-    x^-_k = f_d(x^+_{k-1}, u_k)              -- forward-Euler via DynamicsModel
+    x^-_k = f_d(x^+_{k-1}, u_k)              -- forward-Euler kinematic model
     F_k   = d f_d / d x                       -- Jacobian (numerical central diff)
     P^-_k = F_k P^+_{k-1} F_k^T + Q_k        -- covariance prediction
 
-    F_k maps how a small perturbation in the current state estimate propagates
-    through the nonlinear dynamics into the next predicted state.  It plays the
-    same role as the state-transition matrix A in a linear Kalman filter.
+    Kinematic process model (no tire forces, no steering angle):
+        dot_p_e  = v_x*cos(psi) - v_y*sin(psi)
+        dot_p_n  = v_x*sin(psi) + v_y*cos(psi)
+        dot_psi  = r
+        dot_v_x  = a_x_meas - b_ax
+        dot_v_y  = 0  (random walk; GPS velocity corrects this)
+        dot_r    = 0  (random walk; gyro update corrects this)
+        dot_b_*  = 0  (random walk; Q injects drift uncertainty)
 
 Update step  (run whenever a sensor measurement arrives):
 
@@ -49,14 +67,9 @@ Update step  (run whenever a sensor measurement arrives):
     x^+_k = x^-_k + K_k y_k
     P^+_k = (I - K_k H_k) P^-_k (I - K_k H_k)^T + K_k R_k K_k^T
 
-    The last line is the Joseph form.  It is slightly more expensive than the
-    minimal P^+ = (I - K H) P^- but stays symmetric and positive-definite under
+    Joseph form covariance update: slightly more expensive than minimal
+    P^+ = (I - K H) P^- but stays symmetric and positive-definite under
     floating-point rounding, which matters for long runs.
-
-    Conceptually: the Kalman gain K_k decides how much to trust the sensor (z_k)
-    versus the model prediction (x^-_k).  If R is small (sensor trusted) K is
-    large and the state is pulled toward the measurement.  If P^- is small
-    (model trusted) K is small and the measurement has little influence.
 
 State vector (11 elements):
     x = [p_e, p_n, psi, phi, theta, v_x, v_y, r, b_ax, b_ay, b_gz]^T
@@ -67,25 +80,24 @@ State vector (11 elements):
     v_x, v_y  -- body-frame longitudinal/lateral velocity (m/s)
     r         -- yaw rate (rad/s)
     b_ax      -- IMU longitudinal accelerometer bias (m/s^2)
-    b_ay      -- IMU lateral accelerometer bias (m/s^2)
+    b_ay      -- IMU lateral accelerometer bias (m/s^2)  [random walk only]
     b_gz      -- IMU gyro z-axis bias (rad/s)
 
 Control input:
-    u = [a_x_meas, delta_logged]^T
+    u = [a_x_meas]^T  (steering angle no longer drives the process model)
 
 Sensor updates active:
-    - GPS position       (h = [p_e, p_n]^T,                    analytic H)
-    - GPS velocity       (h = R(psi) [v_x, v_y]^T,             analytic H)
-    - IMU yaw            (h = [psi],                            analytic H)
-    - IMU yaw rate       (h = [r + b_gz],                       analytic H)
-    - IMU roll           (h = [phi],                            analytic H)
-    - IMU pitch          (h = [theta],                          analytic H)
-    - IMU lateral accel  (h = [(F_yf cos delta + F_yr)/m + b_ay], numerical H)
+    - GPS position   (h = [p_e, p_n]^T,          analytic H)
+    - GPS velocity   (h = R(psi) [v_x, v_y]^T,   analytic H)
+    - IMU yaw        (h = [psi],                  analytic H)
+    - IMU yaw rate   (h = [r + b_gz],             analytic H)
+    - IMU roll       (h = [phi],                  analytic H)
+    - IMU pitch      (h = [theta],                analytic H)
+    [IMU lateral accel DISABLED — tire-force model invalid at racing speeds]
 
 Frame conventions:
     - Body: +X forward, +Y left, +Z up
     - World: local ENU  (x = East, y = North)
-    - Steering: configurable sign mapping (see config/frames.yaml)
 """
 
 
@@ -820,19 +832,46 @@ class ExtendedKalmanFilter:
         dt: float,
     ) -> np.ndarray:
         """
-        Evaluate the discrete nonlinear process model f_d(x, u).
+        Evaluate the discrete kinematic process model f_d(x, u).
 
-        This is the point where the EKF and the vehicle dynamics model meet:
-        the EKF owns the estimate and covariance, while ``DynamicsModel`` owns
-        the motion model used to propagate the state forward in time.
+        Replaces the bicycle-dynamics model with a simple kinematic propagation
+        that treats the car as a point mass (drone-style GPS/IMU fusion).
+        Steering angle is no longer used here; it is retained in the signature
+        for backward compatibility only.
+
+        The advisor confirmed that a linear tire/bicycle model is inappropriate
+        for a racecar operating at the nonlinear edge of the tire envelope —
+        cornering stiffness parameters would need extensive tire testing to be
+        valid.  This kinematic model avoids those assumptions entirely.
+
+        State propagation (continuous, discretised by forward Euler):
+            dot_p_e  = v_x*cos(psi) - v_y*sin(psi)
+            dot_p_n  = v_x*sin(psi) + v_y*cos(psi)
+            dot_psi  = r
+            dot_phi  = 0  (random walk; IMU roll update corrects each loop)
+            dot_theta= 0  (random walk; IMU pitch update corrects each loop)
+            dot_v_x  = a_x_meas - b_ax  (IMU accel, bias-corrected)
+            dot_v_y  = 0  (random walk; GPS velocity update corrects this)
+            dot_r    = 0  (random walk; IMU yaw-rate update corrects this)
+            dot_b_*  = 0  (random walk; Q injects drift uncertainty)
         """
-        return self.dynamics_model.predict_ekf_state(
-            state=np.asarray(state, dtype=float).reshape(-1),
-            accel_body_x_mps2=float(accel_body_x_mps2),
-            steering_angle_rad=float(steering_angle_rad),
-            dt=dt,
-            steering_sign_convention=self.steering_sign_convention,
-        )
+        x = np.asarray(state, dtype=float).reshape(-1)
+        p_e, p_n, psi, _phi, _theta, v_x, v_y, r, b_ax, _b_ay, _b_gz = x
+
+        c = math.cos(psi)
+        s = math.sin(psi)
+        ax_corr = float(accel_body_x_mps2) - b_ax
+
+        new_state = x.copy()
+        new_state[0] = p_e + (v_x * c - v_y * s) * dt   # p_e
+        new_state[1] = p_n + (v_x * s + v_y * c) * dt   # p_n
+        new_state[2] = wrap_angle_rad(psi + r * dt)       # psi
+        # indices 3 (phi), 4 (theta): random walk — unchanged, corrected by IMU
+        new_state[5] = v_x + ax_corr * dt                # v_x
+        # index 6 (v_y): random walk — GPS velocity update corrects this
+        # index 7 (r): random walk — gyro update corrects this
+        # indices 8-10 (biases): random walk — Q handles uncertainty
+        return new_state
 
     def predict(
         self,
@@ -1083,25 +1122,19 @@ class ExtendedKalmanFilter:
         measurement_noise: np.ndarray | None = None,
     ) -> EKFEstimate:
         """
-        Update with BNO055 gravity-compensated lateral body acceleration.
+        Lateral body-frame acceleration update via vehicle tire-force model.
 
-        The measurement model is nonlinear (tire forces depend on v_x, v_y, r),
-        so this update uses a numerical Jacobian computed via central differences.
-        At low speed the tire-force model is unreliable; the update is skipped
-        when the estimated longitudinal speed is below the low-speed threshold.
+        DISABLED: The linear tire-force measurement model is not valid for a
+        racecar operating at the nonlinear edge of the tire envelope.  Cornering
+        stiffness parameters (C_f, C_r) require extensive tire testing to be
+        meaningful, and Ackermann steering angles cannot be assumed accurate
+        without that characterisation.  Returns the current estimate unchanged.
+
+        The method is retained so existing call sites compile without changes.
+        DynamicsModel.compute_slip_angles / compute_lateral_tire_forces remain
+        available for offline reporting and analysis.
         """
-        if abs(self.state[5]) < self.low_speed_velocity_update_threshold_mps:
-            return self.get_estimate()
-
-        z = np.array([float(lateral_accel_mps2)], dtype=float)
-        h_fn = lambda s: h_imu_lateral_accel_2d(s, steering_angle_logged_rad, self.dynamics_model)
-        r = (
-            default_measurement_noise(self.noise)["imu_lateral_accel"]
-            if measurement_noise is None
-            else np.asarray(measurement_noise, dtype=float)
-        )
-        # measurement_jacobian=None tells update() to compute it numerically via h_fn
-        return self.update(z, h_fn, None, r)
+        return self.get_estimate()
 
     def update_from_gps_data(self, gps_data: Mapping[str, object]) -> list[EKFEstimate]:
         """Apply whichever GPS measurements are available in a gpsd-style dict."""
