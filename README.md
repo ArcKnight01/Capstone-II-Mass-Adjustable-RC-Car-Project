@@ -2,7 +2,7 @@
 
 This repository contains the control, sensor, logging, and analysis code for the Northeastern University Mass Adjustable RC Car Capstone II project, advised by Professor Carlos Hidrovo.
 
-Full technical document: [Technical Document](Technical Document.md)
+Full technical document: https://docs.google.com/document/d/14RuH56wbCEfM_qvJvr-gffSnfkfuiTqH0ljx36ycuP4/edit?usp=sharing
 
 This README is the short, practical setup guide for working in this repository. The technical document still holds the detailed wiring diagrams, long-form hardware notes, and reference material.
 
