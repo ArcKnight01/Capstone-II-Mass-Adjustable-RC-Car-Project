@@ -27,6 +27,24 @@ The current codebase is built around:
 - Optional GPS HAT configured through `gpsd`
 - Optional camera and GPIO-driven peripherals
 
+## Wiring
+
+### Circuit Diagram
+
+![RC car circuit diagram](circuit_image.png)
+
+### Pinout Summary
+
+| Peripheral | BCM Pin(s) (BCM numbering) | Notes |
+|---|---|---|
+| BNO055 IMU (I²C) | SDA → 2 · SCL → 3 | Used by `IMU.py` over Pi I²C. |
+| Arduino Nano (RC receiver interface) | USB serial (`/dev/ttyUSB0`) | Steering data enters the Pi through serial, not direct GPIO in current runtime code. |
+| GPS HAT (gpsd input) | UART RX/TX (`/dev/serial0`) | `GPS_System.py` reads from gpsd; the GPS device is typically exposed on serial0. |
+| GPS PPS (optional) | 4 | PPS timing support notes in the technical document reference GPIO4. |
+| Camera | CSI connector | Camera support uses the Raspberry Pi CSI interface, not a GPIO pin. |
+
+> Note: The active runtime path in this repository primarily depends on I²C (`BNO055`) and serial (`Arduino Nano`, optional `GPS`). Additional GPIO peripherals from older experiments are not part of the default controller loop.
+
 ## Quick Start
 
 ### Windows / laptop workflow
