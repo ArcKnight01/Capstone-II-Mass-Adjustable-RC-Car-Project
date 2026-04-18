@@ -24,8 +24,7 @@ The current codebase is built around:
 - Raspberry Pi 4 Model B
 - Adafruit BNO055 IMU over I2C
 - Arduino Nano sending steering data over USB serial
-- Optional GPS HAT configured through `gpsd`
-- Optional camera and GPIO-driven peripherals
+- GPS HAT configured through `gpsd`
 
 ## Wiring
 
