@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "CARRIER"
+  given-names: "AIDAN"
+title: "Capstone-II-Mass-Adjustable-RC-Car-Project"
+version: 1.0.0
+date-released: 2026-04-17
+url: "https://github.com/ArcKnight01/Capstone-II-Mass-Adjustable-RC-Car-Project"
