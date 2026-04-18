@@ -337,25 +337,6 @@ ls /dev/ttyUSB*
 
 In the current code, `RCReceiverNano.py` defaults to `/dev/ttyUSB0`.
 
-### GPIO and pin inspection
-
-Useful Raspberry Pi checks from the original setup guide:
-
-```bash
-libcamera-still -o libcamera_test.jpg
-pinout
-sudo usermod -a -G gpio pi
-```
-
-If you change the Pi username, replace `pi` in the `usermod` command.
-
-## Useful Files
-
-- `data/data.csv` contains an example log file.
-- `.vscode/tasks.json` wires the Windows runner into VS Code tasks.
-- `requirements.txt` is the repo's Python dependency list.
-- `tools/bwsi-python.cmd` is the easiest way to run local scripts in the `bwsi` environment.
-
 ## Need More Detail?
 
 Use the technical document for:
