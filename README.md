@@ -349,12 +349,6 @@ sudo usermod -a -G gpio pi
 
 If you change the Pi username, replace `pi` in the `usermod` command.
 
-## Known Repo Assumptions
-
-- `requirements.txt` captures the repo's direct Python dependencies, but `GPS_System.py` still relies on gpsd and its Python bindings being installed through the OS package manager on the Pi.
-- The technical document uses the hostname `carpi`, but the hardware import guards in `Controller.py`, `IMU.py`, and `Odometry.py` currently use hardcoded hostname checks. Verify or update those checks before first run on a newly named Pi.
-- `Plotting.py` is designed for quick inspection rather than a full analysis pipeline.
-
 ## Useful Files
 
 - `data/data.csv` contains an example log file.
