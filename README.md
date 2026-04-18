@@ -325,7 +325,7 @@ If the IMU reports poor calibration, the orientation and derived odometry values
 
 ### RC receiver voltage safety
 
-Before wiring the RC receiver PWM output into the Pi, verify the signal is around `3.3V` max. If the receiver outputs around `6V`, use a voltage divider or level shifting before connecting it to the Raspberry Pi GPIO input. The original guide uses `R1 = 2.7 kOhm` and `R2 = 3.3 kOhm` as one example divider.
+Before wiring the RC receiver PWM output into the Pi, verify the signal is around `3.3V` max. If the receiver outputs around `6V`, use a voltage divider or level shifting before connecting it to the Raspberry Pi GPIO input. (i.e. `R1 = 2.7 kOhm` and `R2 = 3.3 kOhm` as one example divider.)
 
 ### Serial device name
 
