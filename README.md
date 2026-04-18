@@ -27,6 +27,24 @@ The current codebase is built around:
 - Optional GPS HAT configured through `gpsd`
 - Optional camera and GPIO-driven peripherals
 
+## Wiring
+
+### Circuit Diagram
+
+![Circuit wiring diagram](circuit_image.png)
+
+### Pinout Summary
+
+| Peripheral | BCM Pin(s) (BCM numbering) | Notes |
+|---|---|---|
+| BNO055 IMU (I²C) | SDA → 2 · SCL → 3 | Accessed through `IMU.py` / `Odometry.py` using Raspberry Pi I²C. |
+| Adafruit Ultimate GPS HAT | RXD → 15 · TXD → 14 · PPS → 4 · ID EEPROM → 0/1 | The technical document notes these HAT-used pins directly. |
+| Arduino Nano link | USB serial (`/dev/ttyUSB0`) | `RCReceiverNano.py` reads steering data over USB serial, not direct Pi GPIO. |
+| RC receiver CH1 PWM (legacy direct-input workflow) | GPIO mapping project-dependent (verify before use) | README safety note: verify PWM level is ~3.3V max before Pi GPIO input. |
+| Camera | CSI connector | Use Raspberry Pi camera interface (no BCM GPIO pin required). |
+| Legacy 4-motor GPIO test harness (`Old/gpio_indiv_motor_test.py`) | Motor LF: IN1 → 15 · IN2 → 14 · PWM/EN → 18; Motor LB: IN1 → 7 · IN2 → 8 · PWM/EN → 12; Motor RF: IN1 → 5 · IN2 → 6 · PWM/EN → 13; Motor RB: IN1 → 26 · IN2 → 20 · PWM/EN → 19 | Legacy test script under `Old/`; include only if you are using that harness. |
+| Legacy RGB LED test harness (`Old/gpio_indiv_motor_test.py`) | Red → 23 · Green → 24 · Blue → 25 | Legacy RGB indicator pins used in the old GPIO test script. |
+
 ## Quick Start
 
 ### Windows / laptop workflow
