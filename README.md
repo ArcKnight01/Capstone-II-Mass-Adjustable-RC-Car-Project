@@ -45,7 +45,7 @@ Arduino Nano:
 | RC Receiver | D3 | Steering determined by measuring pulse-width of PWM signal sent to steering servo in parallel|
 
 
-> Note: The active runtime path in this repository primarily depends on I²C (`BNO055`) and serial (`Arduino Nano`, optional `GPS`). Additional GPIO peripherals from older experiments are not part of the default controller loop.
+> Note: The active runtime path in this repository primarily depends on I²C (`BNO055`) and serial (`Arduino Nano`, optional `GPS`). Additional GPIO peripherals from legacy code which were used for reference are not part of the default controller loop. 
 
 ## Quick Start
 
