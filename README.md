@@ -298,22 +298,23 @@ python IMU.py        # calibrate and read BNO055
 python Odometry.py   # IMU-based dead reckoning
 python GPS_System.py # connect to gpsd and read GPS fixes
 ```
-
-## Bring-Up Notes
+> Note: See bottom of python scripts for using system arguments.
 
 ### IMU calibration
 
-The IMU code performs an interactive BNO055 calibration sequence. The startup prompts match the workflow from the technical document:
+The IMU code performs an interactive BNO055 calibration sequence. 
 
 - Gyroscope: keep the sensor still
 - Magnetometer: move the sensor normally or in figure-eight motion
 - Accelerometer: place the sensor in six stable orientations
 
-If the IMU reports poor calibration, the orientation and derived odometry values will not be reliable.
+Instructions will be prompted for calibrating the IMU. 
+
+If the IMU reports poor calibration, the orientation and derived odometry values will not be reliable. If the `sys` calibration status is 0, this means that the IMU has not yet found the north pole, and the orientation values should thus be discarded. When testing, we found that there was a constant acceleration bias after the BNO055's propreitary calibration steps, even when the IMU reported having been fully calibrated. The additional, and optional post calibration step was implemented to correct this. However, given that IMU bias is neither linear or time invariant and has a moving bias which is actually dependent on temperature as well, this calibration is only temporary.
 
 ### RC receiver voltage safety
 
-Before wiring the RC receiver PWM output into the Pi, verify the signal is around `3.3V` max. If the receiver outputs around `6V`, use a voltage divider or level shifting before connecting it to the Raspberry Pi GPIO input. (i.e. `R1 = 2.7 kOhm` and `R2 = 3.3 kOhm` as one example divider.)
+Before wiring the RC receiver PWM output into the Pi, verify the signal is around `3.3V` max. If the receiver outputs around `6V`, use a voltage divider or level shifting before connecting it to the Raspberry Pi GPIO input. (i.e. `R1 = 2.7 kOhm` and `R2 = 3.3 kOhm` is one example divider for this 6V to 3.3V use case)
 
 ### Serial device name
 
@@ -324,3 +325,4 @@ ls /dev/ttyUSB*
 ```
 
 In the current code, `RCReceiverNano.py` defaults to `/dev/ttyUSB0`.
+
