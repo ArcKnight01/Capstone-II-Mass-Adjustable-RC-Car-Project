@@ -51,29 +51,23 @@ Arduino Nano:
 
 ### Windows / laptop workflow
 
-Use this path for editing the code, plotting logged data, and lightweight development. Hardware-facing scripts still need a Raspberry Pi with the attached sensors.
+Use this path for editing the code, plotting logged data, and lightweight development. Hardware-facing scripts still need a Raspberry Pi with the attached sensors. Please see the technical document for a more in depth explanation.
 
 1. Install Anaconda to the default location at `%USERPROFILE%\anaconda3`.
 2. Create the conda environment expected by the repo:
 
-   ```powershell
+   ```bash
    conda create -n bwsi python=3.13 anaconda
    conda activate bwsi
    conda install -c conda-forge utm
    pip install -r requirements.txt
    ```
 
-3. Run local scripts through the wrapper:
-
-   ```powershell
-   .\tools\bwsi-python.cmd Plotting.py
+3. Running code
+   ```bash
+   conda activate bwsi
+   python Animate.py data.csv
    ```
-
-4. VS Code includes matching tasks:
-   - `Python: Run active file in bwsi`
-   - `Python: Run active file in bwsi (headless)`
-
-`tools\bwsi-python.cmd` assumes either `conda.exe` or `python.exe` exists inside `%USERPROFILE%\anaconda3` and that the environment is named `bwsi`.
 
 ### Raspberry Pi / robot workflow
 
