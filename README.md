@@ -4,9 +4,11 @@ This repository contains the control, sensor, logging, and analysis code for the
 
 Full technical document: https://docs.google.com/document/d/14RuH56wbCEfM_qvJvr-gffSnfkfuiTqH0ljx36ycuP4/edit?usp=sharing
 
-This README is the short, practical setup guide for working in this repository. The technical document still holds the detailed wiring diagrams, long-form hardware notes, and reference material.
 
-## What Is In This Repo
+This README is the short, practical setup guide for working in this repository, primarily given a Raspberry Pi that has already been set up. The technical document still is the main entry point to this code, and includes detailed explanation on how to recreate this project from scratch. Implementation using those steps was last tested 4/2026.
+
+
+## Repository Contents
 
 - `Controller.py` is the main runtime loop. It calibrates the IMU on startup, reads steering data from the Arduino Nano, updates odometry, optionally runs the Extended Kalman Filter, and logs a CSV to `data/`. The navigation pipeline is selected at launch with `--mode`.
 - `IMU.py` and `Odometry.py` handle the BNO055 IMU and derived motion estimates.
@@ -16,15 +18,6 @@ This README is the short, practical setup guide for working in this repository. 
 - `Plotting.py` plots every numeric column in a CSV log.
 - `Animate.py` animates recorded telemetry as a 3D trajectory.
 - `Arduino Sketches/` contains the Nano firmware used for RC receiver testing and passthrough.
-
-## Expected Hardware
-
-The current codebase is built around:
-
-- Raspberry Pi 4 Model B
-- Adafruit BNO055 IMU over I2C
-- Arduino Nano sending steering data over USB serial
-- GPS HAT configured through `gpsd`
 
 ## Wiring
 
@@ -40,8 +33,8 @@ Rasperry Pi 4B:
 | Peripheral | BCM Pin(s) (BCM numbering) | Notes |
 |---|---|---|
 | BNO055 IMU (I²C) | SDA → 2 · SCL → 3 | Used by `IMU.py` over Pi I²C. |
-| Arduino Nano (RC receiver interface) | USB serial (`/dev/ttyUSB0`) | Steering data in NMEA convention received over serial (UART)|
-| GPS HAT (gpsd input) | UART RX/TX (`/dev/serial0`) | `GPS_System.py` reads from gpsd; the GPS device is typically exposed on serial0. |
+| Arduino Nano (RC receiver interface) | USB serial (`/dev/ttyUSB0`) | Steering data in NMEA convention received over serial (UART) with a checksum|
+| GPS HAT (gpsd input) | UART RX/TX (`/dev/serial0`) | `GPS_System.py` reads from `gpsd`; the GPS device is typically exposed on `serial0`. |
 
 Arduino Nano:
 
@@ -336,13 +329,3 @@ ls /dev/ttyUSB*
 ```
 
 In the current code, `RCReceiverNano.py` defaults to `/dev/ttyUSB0`.
-
-## Need More Detail?
-
-Use the technical document for:
-
-- Wiring diagrams and assembly notes
-- Detailed Raspberry Pi flashing steps
-- GPS HAT setup details
-- RC receiver validation notes and Arduino-side testing
-- Hardware datasheets and external references
