@@ -7,7 +7,7 @@ Full technical document: https://docs.google.com/document/d/14RuH56wbCEfM_qvJvr-
 
 This README is the short, practical setup guide for working in this repository, primarily given a Raspberry Pi that has already been set up. The technical document still is the main entry point to this code, and includes detailed explanation on how to recreate this project from scratch. Implementation using those steps was last tested 4/2026.
 
-
+The EKF implementation was based on [this](https://github.com/Janudis/Extended-Kalman-Filter-GPS_IMU) repo.
 ## Repository Contents
 
 - `Controller.py` is the main runtime loop. It calibrates the IMU on startup, reads steering data from the Arduino Nano, updates odometry, optionally runs the Extended Kalman Filter, and logs a CSV to `data/`. The navigation pipeline is selected at launch with `--mode`.
